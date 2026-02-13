@@ -39,7 +39,7 @@ bool try_create_context(proserpine::VulkanContext& ctx)
         return false;
     }
 
-    ctx = std::move(*result);
+    ctx = result.value();
 
     return true;
 }

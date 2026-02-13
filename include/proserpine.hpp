@@ -190,6 +190,7 @@ struct Error
     explicit Error(std::string msg) : result(VK_ERROR_UNKNOWN), message(std::move(msg)) {}
 };
 
+// Rust's Result-like struct to handle error easily
 template <typename T>
 class Expected
 {
@@ -202,18 +203,17 @@ public:
 
     bool has_error() const { return std::holds_alternative<Error>(this->_data); }
 
-    T& value() { return std::get<T>(this->_data); }
-    const T& value() const { return std::get<T>(this->_data); }
+    inline T&& value() { return std::move(std::get<T>(this->_data)); }
 
-    T& value_or(std::function<void(const Error&)> lbd) { if(this->has_error()) lbd(this->error()); return this->value(); }
-    const T& value_or(std::function<void(const Error&)> lbd) const { if(this->has_error()) lbd(this->error()); return this->value(); }
+    inline T&& value_or(std::function<void(const Error&)> lbd)
+    {
+        if(this->has_error())
+            lbd(this->error());
+
+        return std::move(std::get<T>(this->_data));
+    }
 
     const Error& error() const { return std::get<Error>(this->_data); }
-
-    T* operator->()       { return std::addressof(this->value()); }
-    const T* operator->() const { return std::addressof(this->value()); }
-    T& operator*() { return this->value(); }
-    const T& operator*() const { return this->value(); }
 
 private:
     std::variant<T, Error> _data;
@@ -1657,9 +1657,9 @@ inline Expected<VulkanContext> VulkanContext::create(const CreateInfo& info)
         return selected.error();
     }
 
-    ctx._physical_device = selected->physical_device;
-    ctx._device_properties = std::move(selected->props);
-    ctx._selected_device = std::move(*selected);
+    ctx._selected_device = selected.value();
+    ctx._physical_device = ctx._selected_device.physical_device;
+    ctx._device_properties = ctx._selected_device.props;
 
     result = ctx.create_logical_device(ctx._selected_device, info.features);
 

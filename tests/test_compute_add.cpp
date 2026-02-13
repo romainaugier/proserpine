@@ -2,8 +2,6 @@
 // Copyright (c) 2026 - Present Romain Augier MIT License
 // All rights reserved
 
-// If no Vulkan device is available the test exits with code 0 (skip)
-
 // logger defines all macros for proserpine logging
 #include "logger.hpp"
 
@@ -36,7 +34,7 @@ int main(int argc, char** argv)
     VkDescriptorPoolSize descriptor_pool_sizes[] = { { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1024 } };
     create_info.descriptor_pool_info.sizes = descriptor_pool_sizes;
 
-    proserpine::VulkanContext ctx = std::move(proserpine::VulkanContext::create(create_info).value_or(error_exit_callback));
+    proserpine::VulkanContext ctx = proserpine::VulkanContext::create(create_info).value_or(error_exit_callback);
 
     // Create the two input buffers and the output buffer
     proserpine::BufferCreateInfo buffer_info{};
@@ -69,9 +67,9 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    proserpine::ShaderModule compute_shader = std::move(proserpine::ShaderModule::create(ctx.device(),
-                                                                                         spirv,
-                                                                                         VK_SHADER_STAGE_COMPUTE_BIT).value_or(error_exit_callback));
+    proserpine::ShaderModule compute_shader = proserpine::ShaderModule::create(ctx.device(),
+                                                                               spirv,
+                                                                               VK_SHADER_STAGE_COMPUTE_BIT).value_or(error_exit_callback);
 
     // Build the pipeline layout
     proserpine::PipelineLayoutBuilder builder(ctx.device());
@@ -79,16 +77,16 @@ int main(int argc, char** argv)
     PROSERPINE_ASSERT(!set_info.empty());
     builder.add_set(0, set_info[0]);
 
-    proserpine::PipelineLayout layout = std::move(builder.build().value_or(error_exit_callback));
+    proserpine::PipelineLayout layout = builder.build().value_or(error_exit_callback);
 
     // Create the compute pipeline
-    proserpine::ComputePipeline pipeline = std::move(proserpine::create_compute_pipeline(ctx.device(),
-                                                                                         compute_shader,
-                                                                                         layout.handle(),
-                                                                                         "main").value_or(error_exit_callback));
+    proserpine::ComputePipeline pipeline = proserpine::create_compute_pipeline(ctx.device(),
+                                                                               compute_shader,
+                                                                               layout.handle(),
+                                                                               "main").value_or(error_exit_callback);
 
     // Allocate the descriptor set and write descriptors
-    proserpine::DescriptorSet set = std::move(ctx.allocate_descriptor_set(layout.set_layouts()[0]).value_or(error_exit_callback));
+    proserpine::DescriptorSet set = ctx.allocate_descriptor_set(layout.set_layouts()[0]).value_or(error_exit_callback);
 
     set.write(0, A, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
        .write(1, B, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
