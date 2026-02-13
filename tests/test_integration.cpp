@@ -89,7 +89,7 @@ void test_buffer_creation()
 {
     TEST_BEGIN("Buffer creation and BDA");
 
-    proserpine::BufferCreateInfo bci;
+    proserpine::Buffer::CreateInfo bci;
     bci.size  = 1024;
     bci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
@@ -107,7 +107,7 @@ void test_host_visible_buffer()
 {
     TEST_BEGIN("Host-visible buffer with mapped pointer");
 
-    proserpine::BufferCreateInfo bci;
+    proserpine::Buffer::CreateInfo bci;
     bci.size  = 256;
     bci.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     bci.memory_flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
@@ -129,7 +129,7 @@ void test_buffer_move()
 {
     TEST_BEGIN("Buffer move semantics");
 
-    proserpine::BufferCreateInfo bci;
+    proserpine::Buffer::CreateInfo bci;
     bci.size  = 512;
     bci.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
 
@@ -148,7 +148,7 @@ void test_image_creation()
 {
     TEST_BEGIN("Image creation");
 
-    proserpine::ImageCreateInfo ici;
+    proserpine::Image::CreateInfo ici;
     ici.extent = {64, 64, 1};
     ici.format = VK_FORMAT_R8G8B8A8_UNORM;
     ici.usage  = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -167,7 +167,7 @@ void test_depth_image()
 {
     TEST_BEGIN("Depth image creation");
 
-    proserpine::ImageCreateInfo ici;
+    proserpine::Image::CreateInfo ici;
     ici.extent = {128, 128, 1};
     ici.format = VK_FORMAT_D32_SFLOAT;
     ici.usage  = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
@@ -268,7 +268,7 @@ void test_staging_buffer_upload()
 {
     TEST_BEGIN("StagingBufferManager upload to buffer");
 
-    proserpine::BufferCreateInfo bci;
+    proserpine::Buffer::CreateInfo bci;
     bci.size  = 256;
     bci.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     bci.memory_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
@@ -288,7 +288,7 @@ void test_staging_image_upload()
 {
     TEST_BEGIN("StagingBufferManager upload to image");
 
-    proserpine::ImageCreateInfo ici;
+    proserpine::Image::CreateInfo ici;
     ici.extent = {16, 16, 1};
     ici.format = VK_FORMAT_R8G8B8A8_UNORM;
     ici.usage  = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -344,7 +344,7 @@ void test_multiple_buffer_lifecycle()
 
     for(int i = 0; i < 16; ++i)
     {
-        proserpine::BufferCreateInfo buffer_create_info;
+        proserpine::Buffer::CreateInfo buffer_create_info;
         buffer_create_info.size  = 1024 * (i + 1);
         buffer_create_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
         buffers.push_back(g_ctx->create_buffer(buffer_create_info));

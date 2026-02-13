@@ -37,7 +37,7 @@ int main(int argc, char** argv)
     proserpine::VulkanContext ctx = proserpine::VulkanContext::create(create_info).value_or(error_exit_callback);
 
     // Create the two input buffers and the output buffer
-    proserpine::BufferCreateInfo buffer_info{};
+    proserpine::Buffer::CreateInfo buffer_info{};
     buffer_info.size = 1024 * sizeof(float);
     buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
@@ -59,13 +59,7 @@ int main(int argc, char** argv)
     // Load the precompiled compute shader (see CMakeLists.txt for compile command with glslc)
     const auto shader_path = std::filesystem::path(__FILE__).parent_path() / "compute_add.comp.spv";
 
-    auto spirv = proserpine::load_spirv_file(shader_path.generic_string().c_str());
-
-    if(spirv.size() == 0)
-    {
-        PROSERPINE_LOG_ERROR("Cannot load spirv shader from file");
-        return 1;
-    }
+    auto spirv = proserpine::load_spirv_file(shader_path.generic_string().c_str()).value_or(error_exit_callback);
 
     proserpine::ShaderModule compute_shader = proserpine::ShaderModule::create(ctx.device(),
                                                                                spirv,
@@ -88,11 +82,10 @@ int main(int argc, char** argv)
     // Allocate the descriptor set and write descriptors
     proserpine::DescriptorSet set = ctx.allocate_descriptor_set(layout.set_layouts()[0]).value_or(error_exit_callback);
 
-    set.write(0, A, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-       .write(1, B, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-       .write(2, C, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-
-    set.update();
+    set.write_storage_buffer(0, A)
+       .write_storage_buffer(1, B)
+       .write_storage_buffer(2, C)
+       .update();
 
     // Submit compute command
     ctx.immediate_submit(proserpine::QueueType::Compute, [&](VkCommandBuffer cmd)
@@ -119,7 +112,8 @@ int main(int argc, char** argv)
                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
     });
 
-    ctx.immediate_submit(proserpine::QueueType::Transfer, [&](VkCommandBuffer c) {
+    ctx.immediate_submit(proserpine::QueueType::Transfer, [&](VkCommandBuffer c)
+    {
         VkBufferCopy region{};
         region.size = C.size();
         vkCmdCopyBuffer(c, C.handle(), readback_buffer.handle(), 1, &region);
@@ -129,6 +123,7 @@ int main(int argc, char** argv)
     const float* result = static_cast<const float*>(readback_buffer.mapped_ptr());
 
     PROSERPINE_LOG_INFO("result[0] = %f", *result);
+    PROSERPINE_ASSERT(*result >= 2.0f);
 
     return 0;
 }

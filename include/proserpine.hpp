@@ -45,6 +45,7 @@
 #define __FMT_U64 "{}"
 #define __FMT_U64H "{:016x}"
 #define __FMT_I64 "{}"
+#define __FMT_BOOL "{}"
 #elif defined(PROSERPINE_LOG_FORMAT_PRINTF)
 #define __FMT_STR "%s"
 #define __FMT_WSTR "%ls"
@@ -53,6 +54,7 @@
 #define __FMT_U64 "%zu"
 #define __FMT_U64H "0x%016zx"
 #define __FMT_I64 "%zi"
+#define __FMT_BOOL "%d"
 #else
 #define __FMT_STR ""
 #define __FMT_WSTR ""
@@ -61,6 +63,7 @@
 #define __FMT_U64 ""
 #define __FMT_U64H ""
 #define __FMT_I64 ""
+#define __FMT_BOOL ""
 #endif // defined(PROSERPINE_LOG_FORMAT_FMT)
 
 #if !defined(PROSERPINE_LOG_ERROR)
@@ -115,6 +118,8 @@
         if(__vk_res != VK_SUCCESS)                                          \
             __LOG_ERROR(__FMT_I32 ": " __FMT_STR "", __vk_res, msg);        \
     } while (0)
+
+#define PROSERPINE_WAIT_INFINITE std::numeric_limits<std::uint64_t>::max()
 
 // =============================================================================
 //  Required headers
@@ -241,7 +246,7 @@ enum class Feature : std::uint8_t {
     RayTracingPipeline,
     MeshShader,
     ShaderInt64,
-    SharderFloat64,
+    ShaderFloat64,
     Count,
 };
 
@@ -393,8 +398,8 @@ public:
 
     void signal(std::uint64_t value);
     VkResult wait(std::uint64_t value,
-                  std::uint64_t timeout_ns = std::numeric_limits<std::uint64_t>::max());
-    uint64_t counter() const;
+                  std::uint64_t timeout_ns = PROSERPINE_WAIT_INFINITE);
+    std::uint64_t counter() const;
 
 private:
     VkDevice _device = VK_NULL_HANDLE;
@@ -462,21 +467,22 @@ private:
 //  Buffer
 // ============================================================================
 
-struct BufferCreateInfo
-{
-    VkDeviceSize size = 0;
-    VkBufferUsageFlags usage = 0;
-    VkMemoryPropertyFlags memory_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    const void* initial_data = nullptr; // if non-null, staged upload
-};
-
 class Buffer
 {
+public:
+    struct CreateInfo
+    {
+        VkDeviceSize size = 0;
+        VkBufferUsageFlags usage = 0;
+        VkMemoryPropertyFlags memory_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        const void* initial_data = nullptr; // if non-null, staged upload
+    };
+
 public:
     Buffer() = default;
     Buffer(VkDevice device,
            VkPhysicalDevice physical_device,
-           const BufferCreateInfo& info);
+           const Buffer::CreateInfo& info);
     ~Buffer();
 
     Buffer(const Buffer&) = delete;
@@ -509,8 +515,11 @@ private:
 //  Image
 // =============================================================================
 
-struct ImageCreateInfo
+class Image
 {
+public:
+    struct CreateInfo
+    {
     VkExtent3D extent = {1, 1, 1};
     VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
     VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -519,15 +528,13 @@ struct ImageCreateInfo
     std::uint32_t array_layers = 1;
     VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
     VkMemoryPropertyFlags memory_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-};
+    };
 
-class Image
-{
 public:
     Image() = default;
     Image(VkDevice device,
           VkPhysicalDevice physical_device,
-          const ImageCreateInfo& info);
+          const Image::CreateInfo& info);
     ~Image();
 
     Image(const Image&) = delete;
@@ -677,7 +684,15 @@ public:
                          VkDeviceSize offset = 0,
                          VkDeviceSize range = VK_WHOLE_SIZE);
 
-    void update();
+    DescriptorSet& write_storage_buffer(std::uint32_t binding,
+                                        const Buffer& buffer,
+                                        VkDeviceSize offset = 0,
+                                        VkDeviceSize range = VK_WHOLE_SIZE)
+    {
+        return this->write(binding, buffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, offset, range);
+    }
+
+    DescriptorSet& update();
 
 private:
     DescriptorSet(VkDevice device, VkDescriptorSet set) : _device(device),
@@ -738,7 +753,9 @@ struct VertexInputAttribute
 //  ShaderModule
 // =============================================================================
 
-std::vector<std::uint32_t> load_spirv_file(const char* file_path) noexcept;
+using SPIRVByteCode = std::vector<std::uint32_t>;
+
+Expected<SPIRVByteCode> load_spirv_file(const char* file_path) noexcept;
 
 class ShaderModule
 {
@@ -775,9 +792,9 @@ private:
     void reflect_spirv(const std::vector<std::uint32_t>& spirv);
 };
 
-// ============================================================================
+// =============================================================================
 //  PipelineLayout
-// ============================================================================
+// =============================================================================
 
 class PipelineLayout
 {
@@ -803,9 +820,9 @@ private:
     friend class PipelineLayoutBuilder;
 };
 
-// ============================================================================
+// =============================================================================
 //  PipelineLayoutBuilder
-// ============================================================================
+// =============================================================================
 
 class PipelineLayoutBuilder
 {
@@ -828,9 +845,9 @@ private:
     std::vector<VkPushConstantRange> _push_ranges;
 };
 
-// ============================================================================
+// =============================================================================
 //  Pipeline wrappers
-// ============================================================================
+// =============================================================================
 
 struct ShaderStages
 {
@@ -945,9 +962,9 @@ Expected<ComputePipeline> create_compute_pipeline(VkDevice device,
                                                   VkPipelineLayout layout,
                                                   const char* entry = "main");
 
-// ============================================================================
+// =============================================================================
 //  Fence / Semaphore Pool
-// ============================================================================
+// =============================================================================
 
 class FencePool
 {
@@ -967,9 +984,9 @@ private:
     std::vector<VkFence> _all;
 };
 
-// ============================================================================
+// =============================================================================
 //  Context
-// ============================================================================
+// =============================================================================
 
 class VulkanContext
 {
@@ -1014,8 +1031,8 @@ public:
     FencePool& fence_pool();
     DescriptorPool& descriptor_pool();
 
-    Buffer create_buffer(const BufferCreateInfo& info);
-    Image create_image(const ImageCreateInfo& info);
+    Buffer create_buffer(const Buffer::CreateInfo& info);
+    Image create_image(const Image::CreateInfo& info);
     TimelineSemaphore create_timeline_semaphore(std::uint64_t initial_value = 0);
 
     VkFence create_fence(bool signaled = false);
@@ -1490,9 +1507,14 @@ inline VkResult VulkanContext::create_logical_device(const SelectedDevice& selec
 
     std::vector<const char*> device_extensions;
 
-    auto maybe_add_ext = [&](const char* ext) {
+    auto maybe_add_ext = [&](const char* ext) -> bool {
         if(has_extension(selected.props.available_extensions, ext))
+        {
             device_extensions.push_back(ext);
+            return true;
+        }
+
+        return false;
     };
 
     maybe_add_ext(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
@@ -1573,7 +1595,7 @@ inline VkResult VulkanContext::create_logical_device(const SelectedDevice& selec
     if(features.shader_float64)
     {
         features2.features.shaderFloat64 = VK_TRUE;
-        this->_feature_flags[static_cast<std::size_t>(Feature::SharderFloat64)] = true;
+        this->_feature_flags[static_cast<std::size_t>(Feature::ShaderFloat64)] = true;
     }
 
     VkDeviceCreateInfo device_create_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
@@ -1892,7 +1914,7 @@ inline std::uint32_t VulkanContext::find_memory_type(VkPhysicalDevice physical_d
     return proserpine::find_memory_type(physical_device, type_filter, props);
 }
 
-inline Buffer VulkanContext::create_buffer(const BufferCreateInfo& info)
+inline Buffer VulkanContext::create_buffer(const Buffer::CreateInfo& info)
 {
     PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE);
     PROSERPINE_ASSERT(this->_physical_device != VK_NULL_HANDLE);
@@ -1900,7 +1922,7 @@ inline Buffer VulkanContext::create_buffer(const BufferCreateInfo& info)
     return Buffer(this->_device, this->_physical_device, info);
 }
 
-inline Image VulkanContext::create_image(const ImageCreateInfo& info)
+inline Image VulkanContext::create_image(const Image::CreateInfo& info)
 {
     PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE);
     PROSERPINE_ASSERT(this->_physical_device != VK_NULL_HANDLE);
@@ -1968,7 +1990,7 @@ inline void VulkanContext::immediate_submit(QueueType queue_type,
 
     vkQueueSubmit(this->_queues[qi].queue, 1, &submit, imm_ctx.fence);
 
-    vkWaitForFences(this->_device, 1, &imm_ctx.fence, VK_TRUE, std::numeric_limits<std::uint64_t>::max());
+    vkWaitForFences(this->_device, 1, &imm_ctx.fence, VK_TRUE, PROSERPINE_WAIT_INFINITE);
 }
 
 inline Expected<DescriptorSet> VulkanContext::allocate_descriptor_set(VkDescriptorSetLayout layout)
@@ -2285,7 +2307,7 @@ inline void RenderDocIntegration::end_capture()
 
 inline Buffer::Buffer(VkDevice device,
                       VkPhysicalDevice physical_device,
-                      const BufferCreateInfo& info) : _device(device),
+                      const Buffer::CreateInfo& info) : _device(device),
                                                       _size(info.size)
 {
     __LOG_TRACE("Buffer: Initializing Buffer (device: " __FMT_U64H ")",
@@ -2413,7 +2435,7 @@ inline Buffer& Buffer::operator=(Buffer&& other) noexcept
 
 inline Image::Image(VkDevice device,
                     VkPhysicalDevice physical_device,
-                    const ImageCreateInfo& info) : _device(device),
+                    const Image::CreateInfo& info) : _device(device),
                                                    _format(info.format),
                                                    _extent(info.extent)
 {
@@ -2789,10 +2811,11 @@ inline void StagingBufferManager::flush()
     if(this->_pending.empty())
         return;
 
-    __LOG_TRACE("StagingBufferManager: flush");
+    __LOG_TRACE("StagingBufferManager: Flushing (pending: " __FMT_U64 ")",
+                this->_pending.size());
 
     VkCommandBufferAllocateInfo alloc{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-    alloc.commandPool = _command_pool;
+    alloc.commandPool = this->_command_pool;
     alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     alloc.commandBufferCount = 1;
 
@@ -2814,12 +2837,14 @@ inline void StagingBufferManager::flush()
 
     vkResetFences(this->_device, 1, &this->_fence);
     vkQueueSubmit(this->_transfer_queue, 1, &submit_info, this->_fence);
-    vkWaitForFences(this->_device, 1, &this->_fence, VK_TRUE, std::numeric_limits<std::uint64_t>::max());
+    vkWaitForFences(this->_device, 1, &this->_fence, VK_TRUE, PROSERPINE_WAIT_INFINITE);
 
     vkFreeCommandBuffers(this->_device, this->_command_pool, 1, &cmd);
 
     this->_pending.clear();
     this->_used = 0;
+
+    __LOG_TRACE("StagingBufferManager: Flushed");
 }
 
 // =============================================================================
@@ -2860,10 +2885,15 @@ inline DescriptorPool::~DescriptorPool()
         if(this->_pool != VK_NULL_HANDLE)
         {
             if(this->_sets.size() > 0)
+            {
+                __LOG_TRACE("DescriptorPool: Freeing " __FMT_U64 " descriptor sets",
+                            this->_sets.size());
+
                 vkFreeDescriptorSets(this->_device,
                                      this->_pool,
                                      static_cast<std::uint32_t>(this->_sets.size()),
                                      this->_sets.data());
+            }
 
             vkDestroyDescriptorPool(this->_device, this->_pool, nullptr);
         }
@@ -2894,6 +2924,9 @@ inline DescriptorPool& DescriptorPool::operator=(DescriptorPool&& other) noexcep
 
 inline Expected<DescriptorSet> DescriptorPool::allocate_descriptor_set(VkDescriptorSetLayout layout)
 {
+    __LOG_TRACE("DescriptorPool: Allocating a descriptor set (layout: " __FMT_U64H ")",
+                reinterpret_cast<std::uint64_t>(layout));
+
     VkDescriptorSetAllocateInfo create_info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     create_info.descriptorPool = this->_pool;
     create_info.descriptorSetCount = 1;
@@ -2902,7 +2935,7 @@ inline Expected<DescriptorSet> DescriptorPool::allocate_descriptor_set(VkDescrip
     VkDescriptorSet set;
 
     PROSERPINE_VK_CHECK(vkAllocateDescriptorSets(this->_device, &create_info, &set),
-                        "Failed to allocate descriptor sets");
+                        "Failed to allocate a descriptor set");
 
     this->_sets.push_back(set);
 
@@ -2948,6 +2981,10 @@ inline DescriptorSet& DescriptorSet::write(std::uint32_t binding,
                                            VkDeviceSize offset,
                                            VkDeviceSize range)
 {
+    __LOG_TRACE("Adding a Write Descriptor Set: binding: " __FMT_U32 ", type: " __FMT_U32 "",
+                binding,
+                static_cast<std::uint32_t>(type));
+
     this->_buffer_infos.push_back({ buffer.handle(), offset, range });
 
     this->_writes.push_back({ binding, type, this->_buffer_infos.size() - 1 });
@@ -2955,7 +2992,7 @@ inline DescriptorSet& DescriptorSet::write(std::uint32_t binding,
     return *this;
 }
 
-inline void DescriptorSet::update()
+inline DescriptorSet& DescriptorSet::update()
 {
     __LOG_TRACE("Updating Descriptor Set (" __FMT_U64 " writes)",
                 this->_writes.size());
@@ -2986,43 +3023,58 @@ inline void DescriptorSet::update()
 
     this->_writes.clear();
     this->_buffer_infos.clear();
+
+    return *this;
 }
 
 // =============================================================================
 //  ShaderModule implementation (with minimal SPIR-V reflection)
 // =============================================================================
 
-inline std::vector<std::uint32_t> load_spirv_file(const char* file_path) noexcept
+inline Expected<SPIRVByteCode> load_spirv_file(const char* file_path) noexcept
 {
-    std::vector<std::uint32_t> spirv;
+    __LOG_TRACE("Loading a SPIR-V bytecode file (" __FMT_STR ")",
+                file_path);
+
+    SPIRVByteCode spirv;
 
     std::FILE* file = std::fopen(file_path, "rb");
 
     if(file == nullptr)
-        return spirv;
+        return Error("Cannot open SPIR-V bytecode file");
 
     std::fseek(file, 0, SEEK_END);
     std::size_t file_sz = std::ftell(file);
     std::rewind(file);
 
+    if(file_sz == 0)
+        return Error("SPIR-V bytecode file is empty");
+
     spirv.resize(file_sz / 4);
     std::memset(spirv.data(), 0, spirv.size() * sizeof(std::uint32_t));
 
-    std::fread(spirv.data(), sizeof(std::uint8_t), file_sz, file);
+    if(std::fread(spirv.data(), sizeof(std::uint8_t), file_sz, file) != file_sz)
+        return Error("Error during read of SPIR-V bytecode file");
+
+    if(std::ferror(file))
+        return Error("Error during read of SPIR-V bytecode file");
+
+    __LOG_TRACE("Loaded SPIR-V bytecode file (" __FMT_STR ")",
+                file_path);
 
     return spirv;
 }
 
 inline ShaderModule::ShaderModule()
 {
-    __LOG_TRACE("ShaderModule : Initializing ShaderModule");
+    __LOG_TRACE("ShaderModule: Initializing ShaderModule");
 }
 
 inline Expected<ShaderModule> ShaderModule::create(VkDevice device,
                                                    const std::vector<std::uint32_t>& spirv,
                                                    VkShaderStageFlagBits stage)
 {
-    __LOG_TRACE("ShaderModule : creating a new shader module (" __FMT_U64H ")",
+    __LOG_TRACE("ShaderModule: Creating a new shader module (" __FMT_U64H ")",
                 reinterpret_cast<std::uint64_t>(device));
 
     ShaderModule sm;
@@ -3037,23 +3089,25 @@ inline Expected<ShaderModule> ShaderModule::create(VkDevice device,
 
     if(result != VK_SUCCESS)
     {
-        __LOG_ERROR("ShaderModule : Failed to create a new shader module");
+        __LOG_ERROR("ShaderModule: Failed to create a new shader module");
         return Error(result, "Failed to create shader module");
     }
 
     sm.reflect_spirv(spirv);
 
-    __LOG_TRACE("ShaderModule : creatded a new shader module");
+    __LOG_TRACE("ShaderModule: creatded a new shader module");
 
     return sm;
 }
 
 inline ShaderModule::~ShaderModule()
 {
-    __LOG_TRACE("ShaderModule : Destroying ShaderModule");
 
     if(this->_module != VK_NULL_HANDLE && this->_device != VK_NULL_HANDLE)
+    {
+        __LOG_TRACE("ShaderModule: Destroying ShaderModule");
         vkDestroyShaderModule(this->_device, this->_module, nullptr);
+    }
 }
 
 inline ShaderModule::ShaderModule(ShaderModule&& other) noexcept : _device(other._device),
@@ -3093,18 +3147,18 @@ inline ShaderModule& ShaderModule::operator=(ShaderModule&& other) noexcept
 // It reads OpDecorate, OpMemberDecorate, OpVariable, and type instructions.
 inline void ShaderModule::reflect_spirv(const std::vector<std::uint32_t>& spirv)
 {
-    __LOG_TRACE("ShaderModule : reflecting spirv");
+    __LOG_TRACE("ShaderModule: Reflecting SPIR-V");
 
     if(spirv.size() < 5)
     {
-        __LOG_TRACE("ShaderModule : spirv code size less than 5");
+        __LOG_TRACE("ShaderModule: SPIR-V code size less than 5");
         return;
     }
 
     // SPIR-V magic check
     if(spirv[0] != 0x07230203)
     {
-        __LOG_TRACE("ShaderModule : unexpected spirv header magic " __FMT_U32 "",
+        __LOG_TRACE("ShaderModule: Unexpected SPIR-V header magic " __FMT_U32 "",
                     spirv[0]);
         return;
     }
@@ -3373,7 +3427,8 @@ inline void ShaderModule::reflect_spirv(const std::vector<std::uint32_t>& spirv)
 
     this->_set_layouts = std::move(sets);
 
-    __LOG_TRACE("ShaderModule : spirv reflection successful");
+    __LOG_TRACE("ShaderModule: SPIR-V reflection successful (sets: " __FMT_U64 ")",
+                this->_set_layouts.size());
 }
 
 // =============================================================================
@@ -3383,7 +3438,7 @@ inline void ShaderModule::reflect_spirv(const std::vector<std::uint32_t>& spirv)
 inline PipelineLayoutBuilder& PipelineLayoutBuilder::add_set(std::uint32_t set,
                                                              const DescriptorSetLayoutInfo& info)
 {
-    __LOG_TRACE("PipelineLayoutBuilder : Added a new set (" __FMT_U32 ")",
+    __LOG_TRACE("PipelineLayoutBuilder: Added a new set (" __FMT_U32 ")",
                 info.set);
 
     this->_sets.push_back({set, info});
@@ -3395,7 +3450,7 @@ inline PipelineLayoutBuilder& PipelineLayoutBuilder::add_push_constant_range(VkS
                                                                              std::uint32_t offset,
                                                                              std::uint32_t size)
 {
-    __LOG_TRACE("PipelineLayoutBuilder : Added a push constant range (" __FMT_U32 ", " __FMT_U32 ")",
+    __LOG_TRACE("PipelineLayoutBuilder: Added a push constant range (" __FMT_U32 ", " __FMT_U32 ")",
                 offset,
                 size);
 
@@ -3411,7 +3466,7 @@ inline PipelineLayoutBuilder& PipelineLayoutBuilder::add_push_constant_range(VkS
 
 inline Expected<PipelineLayout> PipelineLayoutBuilder::build()
 {
-    __LOG_TRACE("PipelineLayoutBuilder : Building a new pipeline layout");
+    __LOG_TRACE("PipelineLayoutBuilder: Building a new pipeline layout");
 
     PipelineLayout pl;
     pl._device = this->_device;
@@ -3461,7 +3516,7 @@ inline Expected<PipelineLayout> PipelineLayoutBuilder::build()
 
             if(result != VK_SUCCESS)
             {
-                __LOG_ERROR("PipelineLayoutBuilder : Failed to create a new pipeline layout (failed to create empty descriptor set layout)");
+                __LOG_ERROR("PipelineLayoutBuilder: Failed to create a new pipeline layout (failed to create empty descriptor set layout)");
                 return Error(result, "Failed to create empty descriptor set layout");
             }
 
@@ -3513,7 +3568,7 @@ inline Expected<PipelineLayout> PipelineLayoutBuilder::build()
                     vkDestroyDescriptorSetLayout(this->_device, pl._set_layouts[j], nullptr);
             }
 
-            __LOG_ERROR("PipelineLayoutBuilder : Failed to create a new pipeline layout (failed to create the descriptor set layout)");
+            __LOG_ERROR("PipelineLayoutBuilder: Failed to create a new pipeline layout (failed to create the descriptor set layout)");
 
             return Error(result, "Failed to create descriptor set layout");
         }
@@ -3534,12 +3589,12 @@ inline Expected<PipelineLayout> PipelineLayoutBuilder::build()
             if (sl != VK_NULL_HANDLE)
                 vkDestroyDescriptorSetLayout(this->_device, sl, nullptr);
 
-        __LOG_ERROR("PipelineLayoutBuilder : Failed to create a new pipeline layout");
+        __LOG_ERROR("PipelineLayoutBuilder: Failed to create a new pipeline layout");
 
         return Error(result, "Failed to create pipeline layout");
     }
 
-    __LOG_TRACE("PipelineLayoutBuilder : Built a new pipeline layout");
+    __LOG_TRACE("PipelineLayoutBuilder: Built a new pipeline layout");
 
     return pl;
 }
@@ -3808,15 +3863,17 @@ inline Expected<ComputePipeline> create_compute_pipeline(VkDevice device,
 
 inline ComputePipeline::ComputePipeline()
 {
-    __LOG_DEBUG("ComputePipeline: Initializing ComputePipeline");
+    __LOG_TRACE("ComputePipeline: Initializing ComputePipeline");
 }
 
 inline ComputePipeline::~ComputePipeline()
 {
-    __LOG_DEBUG("ComputePipeline: Destroying ComputePipeline");
-
     if(this->_pipeline != VK_NULL_HANDLE && this->_device != VK_NULL_HANDLE)
+    {
+        __LOG_TRACE("ComputePipeline: Destroying ComputePipeline");
+
         vkDestroyPipeline(this->_device, this->_pipeline, nullptr);
+    }
 }
 
 inline ComputePipeline::ComputePipeline(ComputePipeline&& other) noexcept : _device(other._device),
@@ -3862,7 +3919,8 @@ inline FencePool::~FencePool()
 
 inline VkFence FencePool::acquire(bool signaled)
 {
-    __LOG_TRACE("FencePool: Acquiring a fence");
+    __LOG_TRACE("FencePool: Acquiring a fence (signaled: " __FMT_BOOL ")",
+                static_cast<std::int32_t>(signaled));
 
     if(!this->_free.empty())
     {
@@ -3880,18 +3938,22 @@ inline VkFence FencePool::acquire(bool signaled)
     if(signaled)
         create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    VkFence f;
-    PROSERPINE_VK_CHECK_VOID(vkCreateFence(this->_device, &create_info, nullptr, &f),
+    VkFence fence;
+    PROSERPINE_VK_CHECK_VOID(vkCreateFence(this->_device, &create_info, nullptr, &fence),
                              "Failed to create fence in pool");
 
-    this->_all.push_back(f);
+    this->_all.push_back(fence);
 
-    return f;
+    __LOG_TRACE("FencePool: Acquired a fence (" __FMT_U64H ")",
+                reinterpret_cast<std::uint64_t>(fence));
+
+    return fence;
 }
 
 inline void FencePool::release(VkFence fence)
 {
-    __LOG_TRACE("FencePool: Releasing a fence");
+    __LOG_TRACE("FencePool: Releasing a fence (" __FMT_U64H ")",
+                reinterpret_cast<std::uint64_t>(fence));
 
     this->_free.push_back(fence);
 }
