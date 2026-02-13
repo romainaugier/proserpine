@@ -1,0 +1,13 @@
+# Clangd
+.clangd
+compile_flags.txt
+
+# Build Directory
+build
+
+# Compiled shaders
+*.spv
+
+# Editors
+.vscode
+.zed
