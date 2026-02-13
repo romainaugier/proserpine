@@ -1,6 +1,7 @@
 # Clangd
 .clangd
 compile_flags.txt
+.cache
 
 # Build Directory
 build

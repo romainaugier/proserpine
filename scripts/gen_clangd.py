@@ -1,3 +1,5 @@
+#!/bin/python3
+
 import os
 import io
 import shutil
@@ -13,7 +15,7 @@ CLANGD_FILE_PATH = ROOT_DIR / ".clangd"
 
 COMPILE_FLAGS_PATH = ROOT_DIR / "compile_flags.txt"
 
-def find_vk_sdk_path(hint: Optional[str] = None) -> Optional[str]:
+def find_vk_sdk_path_windows(hint: Optional[str] = None) -> Optional[str]:
     if platform.system() != "Windows":
         return None
 
@@ -26,6 +28,19 @@ def find_vk_sdk_path(hint: Optional[str] = None) -> Optional[str]:
 
     return None
 
+def find_vk_include_path_linux(hint: Optional[str] = None) -> Optional[str]:
+    if platform.system() != "Linux":
+        return None
+
+    usr_include = Path("/usr/include")
+
+    vk_include = usr_include / "vulkan"
+
+    if vk_include.exists():
+        return str(vk_include)
+
+    return None
+
 if __name__ == "__main__":
     buf = io.StringIO()
 
@@ -35,7 +50,7 @@ if __name__ == "__main__":
         print(f"Using hint to find Vulkan sdk path: {sys.argv[1]}")
         vk_sdk_hint = sys.argv[1]
 
-    cpp_std = 17
+    cpp_std = 20
 
     buf.write("CompileFlags:\n")
     buf.write("    Add:\n")
@@ -45,11 +60,16 @@ if __name__ == "__main__":
     buf.write(f"    - \"-std=c++{cpp_std}\"\n")
 
     if platform.system() == "Windows":
-        vk_sdk_path = find_vk_sdk_path(vk_sdk_hint)
+        vk_sdk_path = find_vk_sdk_path_windows(vk_sdk_hint)
 
         if vk_sdk_path is not None:
             vk_sdk_path = vk_sdk_path.replace('\\', '/')
             buf.write(f"    - \"-I{vk_sdk_path}/Include\"\n")
+    elif platform.system() == "Linux":
+        vk_include_path = find_vk_include_path_linux()
+
+        if vk_include_path is not None:
+            buf.write(f"    - \"-I{vk_include_path}\"\n")
 
     buf.write("\n")
     buf.write("Diagnostics:\n")

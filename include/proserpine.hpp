@@ -2183,7 +2183,7 @@ inline bool RenderDocIntegration::initialize()
         return false;
     }
 
-    auto get_api = reinterpret_cast<GetApiFn>(dlsym(module_, "RENDERDOC_GetAPI"));
+    auto get_api = reinterpret_cast<GetApiFn>(dlsym(this->_module, "RENDERDOC_GetAPI"));
 #elif defined(PROSERPINE_PLATFORM_WINDOWS)
     if(const char* path = std::getenv("PATH"))
     {
