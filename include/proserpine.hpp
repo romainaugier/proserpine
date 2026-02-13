@@ -297,18 +297,22 @@ struct DeviceFilter
 
 struct FeaturesRequested
 {
-    bool timeline_semaphore     = true;
+    // Overriden if VK_KHR_SURFACE_EXTENSION_NAME in extra_instance_extensions
+    // in VulkanContext::CreateInfo
+    bool surface = false;
+
+    bool timeline_semaphore = true;
     bool buffer_device_address  = true;
-    bool descriptor_indexing    = true;
-    bool synchronization2       = true;
-    bool dynamic_rendering      = true;
+    bool descriptor_indexing = true;
+    bool synchronization2 = true;
+    bool dynamic_rendering = true;
 
     // Opt-in advanced features
-    bool ray_query              = false;
-    bool ray_tracing_pipeline   = false;
-    bool mesh_shader            = false;
-    bool shader_int64           = false;
-    bool shader_float64         = false;
+    bool ray_query = false;
+    bool ray_tracing_pipeline = false;
+    bool mesh_shader = false;
+    bool shader_int64 = false;
+    bool shader_float64 = false;
 
     std::vector<const char*> extra_device_extensions;
 };
@@ -1003,7 +1007,7 @@ public:
         DescriptorPool::CreateInfo descriptor_pool_info;
     };
 
-    static Expected<VulkanContext> create(const CreateInfo& info);
+    static Expected<VulkanContext> create(VulkanContext::CreateInfo& info);
 
     VulkanContext() = default;
     ~VulkanContext();
@@ -1517,7 +1521,13 @@ inline VkResult VulkanContext::create_logical_device(const SelectedDevice& selec
         return false;
     };
 
-    maybe_add_ext(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    if(features.surface)
+    {
+        if(maybe_add_ext(VK_KHR_SWAPCHAIN_EXTENSION_NAME))
+            __LOG_TRACE("Detected " __FMT_STR " extension, added " __FMT_STR " extension",
+                        VK_KHR_SURFACE_EXTENSION_NAME,
+                        VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    }
 
     if(selected.props.properties.apiVersion < VK_API_VERSION_1_3)
     {
@@ -1655,7 +1665,7 @@ inline VkResult VulkanContext::create_logical_device(const SelectedDevice& selec
 //  VulkanContext::create
 // ============================================================================
 
-inline Expected<VulkanContext> VulkanContext::create(const CreateInfo& info)
+inline Expected<VulkanContext> VulkanContext::create(VulkanContext::CreateInfo& info)
 {
     __LOG_TRACE("Creating a new VulkanContext");
 
@@ -1682,6 +1692,15 @@ inline Expected<VulkanContext> VulkanContext::create(const CreateInfo& info)
     ctx._selected_device = selected.value();
     ctx._physical_device = ctx._selected_device.physical_device;
     ctx._device_properties = ctx._selected_device.props;
+
+    for(const auto extension : info.extra_instance_extensions)
+    {
+        if(std::strcmp(extension, VK_KHR_SURFACE_EXTENSION_NAME) == 0)
+        {
+            __LOG_TRACE("Enabling VK_KHR_Surface extension");
+            info.features.surface = true;
+        }
+    }
 
     result = ctx.create_logical_device(ctx._selected_device, info.features);
 
