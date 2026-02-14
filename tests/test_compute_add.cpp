@@ -13,6 +13,8 @@
 
 #include <filesystem>
 
+#define TEST_SIZE (1024 * 1024)
+
 int main(int argc, char** argv)
 {
     // Callback for Expected<T>.value_or
@@ -38,19 +40,19 @@ int main(int argc, char** argv)
 
     // Create the two input buffers and the output buffer
     proserpine::Buffer::CreateInfo buffer_info{};
-    buffer_info.size = 1024 * sizeof(float);
+    buffer_info.size = TEST_SIZE * sizeof(float);
     buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
                         VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
     buffer_info.memory_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
-    proserpine::Buffer A = ctx.create_buffer(buffer_info);
-    proserpine::Buffer B = ctx.create_buffer(buffer_info);
-    proserpine::Buffer C = ctx.create_buffer(buffer_info);
+    proserpine::Buffer A = ctx.create_buffer(buffer_info).value_or(error_exit_callback);
+    proserpine::Buffer B = ctx.create_buffer(buffer_info).value_or(error_exit_callback);
+    proserpine::Buffer C = ctx.create_buffer(buffer_info).value_or(error_exit_callback);
 
     // Upload some data
-    std::vector<float> ones(1024, 1.0f);
+    std::vector<float> ones(TEST_SIZE, 1.0f);
 
     ctx.staging().upload_to_buffer(ones.data(), ones.size() * sizeof(float), A.handle());
     ctx.staging().upload_to_buffer(ones.data(), ones.size() * sizeof(float), B.handle());
@@ -68,7 +70,12 @@ int main(int argc, char** argv)
     // Build the pipeline layout
     proserpine::PipelineLayoutBuilder builder(ctx.device());
     auto set_info = compute_shader.descriptor_set_layouts();
-    PROSERPINE_ASSERT(!set_info.empty());
+
+    if(set_info.size() == 0)
+    {
+        return 1;
+    }
+
     builder.add_set(0, set_info[0]);
 
     proserpine::PipelineLayout layout = builder.build().value_or(error_exit_callback);
@@ -101,8 +108,16 @@ int main(int argc, char** argv)
                                 0,
                                 nullptr);
 
-        vkCmdDispatch(cmd, 1024 / 64, 1, 1);
+        // Record compute execution
+        ctx.command_profiler().start(cmd);
+
+        vkCmdDispatch(cmd, TEST_SIZE / 64, 1, 1);
+
+        ctx.command_profiler().end(cmd);
     });
+
+    // Get elapsed time (see CommandProfiler::ElapsedUnit for available time units)
+    PROSERPINE_LOG_INFO("elapsed: %f ns", ctx.command_profiler().elapsed());
 
     // Read the output back
     proserpine::Buffer readback_buffer = ctx.create_buffer({
@@ -110,7 +125,7 @@ int main(int argc, char** argv)
         .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         .memory_flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-    });
+    }).value_or(error_exit_callback);
 
     ctx.immediate_submit(proserpine::QueueType::Transfer, [&](VkCommandBuffer c)
     {
@@ -123,7 +138,7 @@ int main(int argc, char** argv)
     const float* result = static_cast<const float*>(readback_buffer.mapped_ptr());
 
     PROSERPINE_LOG_INFO("result[0] = %f", *result);
-    PROSERPINE_ASSERT(*result >= 2.0f);
+    ASSERT_GE(*result, 2.0f);
 
     return 0;
 }

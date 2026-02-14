@@ -46,6 +46,8 @@
 #define __FMT_U64H "{:016x}"
 #define __FMT_I64 "{}"
 #define __FMT_BOOL "{}"
+#define __FMT_FLT32 "{}"
+#define __FMT_FLT64 "{}"
 #elif defined(PROSERPINE_LOG_FORMAT_PRINTF)
 #define __FMT_STR "%s"
 #define __FMT_WSTR "%ls"
@@ -55,6 +57,8 @@
 #define __FMT_U64H "0x%016zx"
 #define __FMT_I64 "%zi"
 #define __FMT_BOOL "%d"
+#define __FMT_FLT32 "%f"
+#define __FMT_FLT64 "%f"
 #else
 #define __FMT_STR ""
 #define __FMT_WSTR ""
@@ -64,6 +68,8 @@
 #define __FMT_U64H ""
 #define __FMT_I64 ""
 #define __FMT_BOOL ""
+#define __FMT_FLT32 ""
+#define __FMT_FLT64 ""
 #endif // defined(PROSERPINE_LOG_FORMAT_FMT)
 
 #if !defined(PROSERPINE_LOG_ERROR)
@@ -100,10 +106,27 @@
 //  Utilities
 // =============================================================================
 
-#if !defined(PROSERPINE_ASSERT)
-#include <cassert>
-#define PROSERPINE_ASSERT(expr) assert(expr)
-#endif // !defined(PROSERPINE_ASSERT)
+// In debug mode, assertions will abort, and in Release only return an error value
+// depending on the calling context. It makes error checking easier
+#if defined(NDEBUG)
+#define PROSERPINE_ASSERT(expr, msg, retvalue)                  \
+    if(!(expr)) {                                               \
+        std::fprintf(stderr,                                    \
+                    "Check failed in file %s at line %d: %s\n", \
+                    __FILE__,                                   \
+                    __LINE__,                                   \
+                    msg);                                       \
+        return retvalue; }
+#else
+#define PROSERPINE_ASSERT(expr, msg, retvalue)                      \
+    if(!(expr)) {                                                   \
+        std::fprintf(stderr,                                        \
+                    "Assertion failed in file %s at line %d: %s\n", \
+                    __FILE__,                                       \
+                    __LINE__,                                       \
+                    msg);                                           \
+        std::abort(); }
+#endif // defined(NDEBUG)
 
 #define PROSERPINE_VK_CHECK(expr, msg)      \
     do {                                    \
@@ -120,6 +143,12 @@
     } while (0)
 
 #define PROSERPINE_WAIT_INFINITE std::numeric_limits<std::uint64_t>::max()
+
+#define PROSERPINE_COPYABLE(__class__) __class__(const __class__& other); __class__& operator=(const __class__& other)
+#define PROSERPINE_NON_COPYABLE(__class__) __class__(const __class__&) = delete; __class__& operator=(const __class__&) = delete
+
+#define PROSERPINE_MOVABLE(__class__) __class__(__class__&& other) noexcept; __class__& operator=(__class__&& other) noexcept
+#define PROSERPINE_NON_MOVABLE(__class__) __class__(__class__&&) = delete; __class__& operator=(__class__&&)
 
 // =============================================================================
 //  Required headers
@@ -176,6 +205,7 @@ class RenderDocIntegration;
 class StagingBufferManager;
 class DescriptorPool;
 class DescriptorSet;
+class CommandProfiler;
 class ShaderModule;
 class PipelineLayout;
 class GraphicsPipeline;
@@ -447,9 +477,9 @@ private:
     std::atomic<bool> _running{false};
 };
 
-// ============================================================================
+// =============================================================================
 //  RenderDoc integration
-// ============================================================================
+// =============================================================================
 
 class RenderDocIntegration
 {
@@ -467,9 +497,9 @@ private:
     void* _module = nullptr;
 };
 
-// ============================================================================
+// =============================================================================
 //  Buffer
-// ============================================================================
+// =============================================================================
 
 class Buffer
 {
@@ -717,6 +747,45 @@ private:
 
     friend class VulkanContext;
     friend class DescriptorPool;
+};
+
+// =============================================================================
+//  Command Profiler
+// =============================================================================
+
+class CommandProfiler
+{
+public:
+    enum ElapsedUnit
+    {
+        Seconds,
+        Milliseconds,
+        Microseconds,
+        Nanoseconds,
+    };
+
+    static constexpr double INVALID_MEASURE = std::numeric_limits<double>::max();
+public:
+    CommandProfiler(VkDevice device, VkPhysicalDevice physical_device);
+
+    ~CommandProfiler();
+
+    PROSERPINE_NON_COPYABLE(CommandProfiler);
+    PROSERPINE_MOVABLE(CommandProfiler);
+
+    void start(VkCommandBuffer cmd) noexcept;
+
+    void end(VkCommandBuffer cmd) noexcept;
+
+    double elapsed(ElapsedUnit unit = ElapsedUnit::Milliseconds) noexcept;
+
+private:
+    VkQueryPool _pool = VK_NULL_HANDLE;
+    VkDevice _device = VK_NULL_HANDLE;
+
+    double _timestamp_period = 0.0;
+
+    friend class VulkanContext;
 };
 
 // =============================================================================
@@ -1034,12 +1103,13 @@ public:
     RenderDocIntegration& renderdoc();
     FencePool& fence_pool();
     DescriptorPool& descriptor_pool();
+    CommandProfiler& command_profiler();
 
-    Buffer create_buffer(const Buffer::CreateInfo& info);
-    Image create_image(const Image::CreateInfo& info);
-    TimelineSemaphore create_timeline_semaphore(std::uint64_t initial_value = 0);
+    Expected<Buffer> create_buffer(const Buffer::CreateInfo& info);
+    Expected<Image> create_image(const Image::CreateInfo& info);
+    Expected<TimelineSemaphore> create_timeline_semaphore(std::uint64_t initial_value = 0);
+    Expected<VkFence> create_fence(bool signaled = false);
 
-    VkFence create_fence(bool signaled = false);
     void wait_idle();
 
     void immediate_submit(QueueType queue_type,
@@ -1085,6 +1155,7 @@ private:
     std::unique_ptr<RenderDocIntegration> _renderdoc;
     std::unique_ptr<FencePool> _fence_pool;
     std::unique_ptr<DescriptorPool> _descriptor_pool;
+    std::unique_ptr<CommandProfiler> _command_profiler;
 
     bool _validation_enabled = false;
 
@@ -1287,11 +1358,15 @@ inline VkResult VulkanContext::create_instance(const CreateInfo& info,
 inline Expected<SelectedDevice> VulkanContext::select_device(VkInstance instance,
                                                              const DeviceFilter& filter)
 {
+    __LOG_TRACE("Selecting device");
+
     std::uint32_t count = 0;
     vkEnumeratePhysicalDevices(instance, &count, nullptr);
 
     if(count == 0)
         return Error("No Vulkan physical devices found");
+
+    __LOG_TRACE(__FMT_U32 " device(s) available", count);
 
     std::vector<VkPhysicalDevice> physical_devices(count);
     vkEnumeratePhysicalDevices(instance, &count, physical_devices.data());
@@ -1307,13 +1382,19 @@ inline Expected<SelectedDevice> VulkanContext::select_device(VkInstance instance
 
     for(auto physical_device : physical_devices)
     {
+        __LOG_TRACE("Evaluating physical device " __FMT_U64H "",
+                    reinterpret_cast<std::uint64_t>(physical_device));
+
         DeviceProperties device_properties;
 
         vkGetPhysicalDeviceProperties(physical_device, &device_properties.properties);
 
         // Version check
         if(device_properties.properties.apiVersion < filter.min_api_version)
+        {
+            __LOG_TRACE("Device does not support minimum API version");
             continue;
+        }
 
         // Features chain
         VkPhysicalDeviceFeatures2 features2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
@@ -1352,7 +1433,10 @@ inline Expected<SelectedDevice> VulkanContext::select_device(VkInstance instance
         }
 
         if(!has_all_exts)
+        {
+            __LOG_TRACE("Device does not support all required extensions");
             continue;
+        }
 
         // Check queue family requirements
         bool has_graphics = false;
@@ -1361,13 +1445,33 @@ inline Expected<SelectedDevice> VulkanContext::select_device(VkInstance instance
         {
             if(device_properties.queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
             {
+                // Timestamp (for CommandProfiler)
+                if(device_properties.queue_families[i].timestampValidBits == 0)
+                {
+                    __LOG_TRACE("Graphics queue family does not support timestamp queries");
+                    continue;
+                }
+
                 has_graphics = true;
+
+                __LOG_TRACE("Device has a valid graphics queue family");
+
                 break;
             }
         }
 
         if(!has_graphics)
+        {
+            __LOG_TRACE("Device has not graphics queue family");
             continue;
+        }
+
+        // Timestamp (for CommandProfiler)
+        if(device_properties.properties.limits.timestampPeriod == 0)
+        {
+            __LOG_TRACE("Device does not support timestamp queries");
+            continue;
+        }
 
         // Default scoring
         std::int32_t score = 0;
@@ -1386,10 +1490,16 @@ inline Expected<SelectedDevice> VulkanContext::select_device(VkInstance instance
             std::int32_t user_score = filter.scorer(physical_device, device_properties);
 
             if(user_score < 0)
+            {
+                __LOG_TRACE("User-scoring rejected device");
                 continue;
+            }
 
             score = user_score;
         }
+
+        __LOG_TRACE("Found a candidate physical device " __FMT_U64H "",
+                    reinterpret_cast<std::uint64_t>(physical_device));
 
         candidates.push_back({physical_device, std::move(device_properties), score});
     }
@@ -1731,6 +1841,7 @@ inline void VulkanContext::destroy()
         this->_timeline_callbacks.reset();
         this->_fence_pool.reset();
         this->_descriptor_pool.reset();
+        this->_command_profiler.reset();
 
         for(auto& context : this->_immediate_contexts)
         {
@@ -1843,14 +1954,14 @@ inline VkQueue VulkanContext::queue(QueueType type,
                                     std::uint32_t /* index */) const
 {
     std::size_t i = static_cast<std::size_t>(type);
-    PROSERPINE_ASSERT(this->_queues[i].valid);
+    PROSERPINE_ASSERT(this->_queues[i].valid, "Queue is invalid", VK_NULL_HANDLE);
     return this->_queues[i].queue;
 }
 
 inline std::uint32_t VulkanContext::queue_family(QueueType type) const
 {
     std::size_t i = static_cast<std::size_t>(type);
-    PROSERPINE_ASSERT(this->_queues[i].valid);
+    PROSERPINE_ASSERT(this->_queues[i].valid, "Queue is invalid", VK_NULL_HANDLE);
     return this->_queues[i].family;
 }
 
@@ -1922,6 +2033,15 @@ inline DescriptorPool& VulkanContext::descriptor_pool()
     return *this->_descriptor_pool;
 }
 
+inline CommandProfiler& VulkanContext::command_profiler()
+{
+    if(!this->_command_profiler)
+        this->_command_profiler = std::make_unique<CommandProfiler>(this->_device,
+                                                                    this->_physical_device);
+
+    return *this->_command_profiler;
+}
+
 // =============================================================================
 //  VulkanContext object creation helpers
 // =============================================================================
@@ -1933,32 +2053,32 @@ inline std::uint32_t VulkanContext::find_memory_type(VkPhysicalDevice physical_d
     return proserpine::find_memory_type(physical_device, type_filter, props);
 }
 
-inline Buffer VulkanContext::create_buffer(const Buffer::CreateInfo& info)
+inline Expected<Buffer> VulkanContext::create_buffer(const Buffer::CreateInfo& info)
 {
-    PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE);
-    PROSERPINE_ASSERT(this->_physical_device != VK_NULL_HANDLE);
+    PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", Error("Invalid Device"));
+    PROSERPINE_ASSERT(this->_physical_device != VK_NULL_HANDLE, "Physical device is NULL", Error("Invalid Physical Device"));
 
     return Buffer(this->_device, this->_physical_device, info);
 }
 
-inline Image VulkanContext::create_image(const Image::CreateInfo& info)
+inline Expected<Image> VulkanContext::create_image(const Image::CreateInfo& info)
 {
-    PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE);
-    PROSERPINE_ASSERT(this->_physical_device != VK_NULL_HANDLE);
+    PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", Error("Invalid Device"));
+    PROSERPINE_ASSERT(this->_physical_device != VK_NULL_HANDLE, "Physical device is NULL", Error("Invalid Physical Device"));
 
     return Image(this->_device, this->_physical_device, info);
 }
 
-inline TimelineSemaphore VulkanContext::create_timeline_semaphore(std::uint64_t initial_value)
+inline Expected<TimelineSemaphore> VulkanContext::create_timeline_semaphore(std::uint64_t initial_value)
 {
-    PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE);
+    PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", Error("Invalid Device"));
 
     return TimelineSemaphore(this->_device, initial_value);
 }
 
-inline VkFence VulkanContext::create_fence(bool signaled)
+inline Expected<VkFence> VulkanContext::create_fence(bool signaled)
 {
-    PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE);
+    PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", Error("Invalid Device"));
 
     VkFenceCreateInfo ci{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
 
@@ -1987,10 +2107,11 @@ inline void VulkanContext::immediate_submit(QueueType queue_type,
     auto qi = static_cast<std::size_t>(queue_type);
     auto& imm_ctx = this->_immediate_contexts[qi];
 
-    PROSERPINE_ASSERT(this->_queues[qi].valid &&
-                      imm_ctx.pool != VK_NULL_HANDLE &&
-                      imm_ctx.cmd != VK_NULL_HANDLE &&
-                      imm_ctx.fence != VK_NULL_HANDLE);
+    PROSERPINE_ASSERT(this->_queues[qi].valid, "Invalid queue", );
+
+    PROSERPINE_ASSERT(imm_ctx.pool != VK_NULL_HANDLE, "Invalid CmdPool", );
+    PROSERPINE_ASSERT(imm_ctx.cmd != VK_NULL_HANDLE, "Invalid CmdBuffer", );
+    PROSERPINE_ASSERT(imm_ctx.fence != VK_NULL_HANDLE, "Invalid Fence", );
 
     vkResetFences(this->_device, 1, &imm_ctx.fence);
     vkResetCommandPool(this->_device, imm_ctx.pool, 0);
@@ -2946,6 +3067,9 @@ inline Expected<DescriptorSet> DescriptorPool::allocate_descriptor_set(VkDescrip
     __LOG_TRACE("DescriptorPool: Allocating a descriptor set (layout: " __FMT_U64H ")",
                 reinterpret_cast<std::uint64_t>(layout));
 
+    PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", Error("Invalid Device"));
+    PROSERPINE_ASSERT(this->_pool != VK_NULL_HANDLE, "DescriptorPool is NULL", Error("Invalid DescriptorPool"));
+
     VkDescriptorSetAllocateInfo create_info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     create_info.descriptorPool = this->_pool;
     create_info.descriptorSetCount = 1;
@@ -3044,6 +3168,122 @@ inline DescriptorSet& DescriptorSet::update()
     this->_buffer_infos.clear();
 
     return *this;
+}
+
+// =============================================================================
+//  Command Profiler implementation
+// =============================================================================
+
+inline CommandProfiler::~CommandProfiler()
+{
+    if(this->_device != VK_NULL_HANDLE)
+    {
+        __LOG_TRACE("CommandProfiler: Destroying");
+
+        if(this->_pool != VK_NULL_HANDLE)
+            vkDestroyQueryPool(this->_device, this->_pool, nullptr);
+    }
+}
+
+inline CommandProfiler::CommandProfiler(VkDevice device, VkPhysicalDevice physical_device) : _device(device)
+{
+    __LOG_TRACE("CommandProfiler: Initializing");
+
+    PROSERPINE_ASSERT(device != VK_NULL_HANDLE, "Device is NULL", );
+    PROSERPINE_ASSERT(physical_device != VK_NULL_HANDLE, "Physical Device is NULL", );
+
+    VkQueryPoolCreateInfo create_info{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+    create_info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+    create_info.queryCount = 2;
+
+    PROSERPINE_VK_CHECK_VOID(vkCreateQueryPool(this->_device, &create_info, nullptr, &this->_pool),
+                             "Failed to create Query Pool");
+
+    VkPhysicalDeviceProperties properties;
+    vkGetPhysicalDeviceProperties(physical_device, &properties);
+
+    this->_timestamp_period = static_cast<double>(properties.limits.timestampPeriod);
+
+    __LOG_TRACE("CommandProfiler: Initialized (timestamp period: " __FMT_FLT32 ")",
+                this->_timestamp_period);
+}
+
+inline CommandProfiler::CommandProfiler(CommandProfiler&& other) noexcept : _device(other._device),
+                                                                            _pool(other._pool)
+{
+    other._device = VK_NULL_HANDLE;
+    other._pool = VK_NULL_HANDLE;
+}
+
+inline CommandProfiler& CommandProfiler::operator=(CommandProfiler&& other) noexcept
+{
+    if(this != &other)
+    {
+        this->_device = other._device;
+        this->_pool = other._pool;
+
+        other._device = VK_NULL_HANDLE;
+        other._pool = VK_NULL_HANDLE;
+    }
+
+    return *this;
+}
+
+inline void CommandProfiler::start(VkCommandBuffer cmd) noexcept
+{
+    __LOG_TRACE("CommandProfiler: Writing start timestamp");
+
+    PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", );
+    PROSERPINE_ASSERT(this->_pool != VK_NULL_HANDLE, "QueryPool is NULL",);
+
+    vkCmdResetQueryPool(cmd, this->_pool, 0, 2);
+    vkCmdWriteTimestamp(cmd,
+                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                        this->_pool,
+                        0);
+}
+
+inline void CommandProfiler::end(VkCommandBuffer cmd) noexcept
+{
+    __LOG_TRACE("CommandProfiler: Writing end timestamp");
+
+    PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", );
+    PROSERPINE_ASSERT(this->_pool != VK_NULL_HANDLE, "QueryPool is NULL",);
+
+    vkCmdWriteTimestamp(cmd,
+                        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                        this->_pool,
+                        1);
+}
+
+inline double CommandProfiler::elapsed(ElapsedUnit unit) noexcept
+{
+    __LOG_TRACE("CommandProfiler: Querying results");
+
+    PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", CommandProfiler::INVALID_MEASURE);
+    PROSERPINE_ASSERT(this->_pool != VK_NULL_HANDLE, "QueryPool is NULL", CommandProfiler::INVALID_MEASURE);
+
+    std::uint64_t timestamps[2];
+    vkGetQueryPoolResults(this->_device,
+                          this->_pool,
+                          0,
+                          2,
+                          sizeof(timestamps),
+                          timestamps,
+                          sizeof(std::uint64_t),
+                          VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+
+    double divisor = 1.0f;
+
+    switch(unit)
+    {
+        case CommandProfiler::ElapsedUnit::Milliseconds: divisor = 1e6; break;
+        case CommandProfiler::ElapsedUnit::Microseconds: divisor = 1e3; break;
+        case CommandProfiler::ElapsedUnit::Seconds: divisor = 1e9; break;
+        default: break;
+    }
+
+    return static_cast<double>(timestamps[1] - timestamps[0]) * this->_timestamp_period / divisor;
 }
 
 // =============================================================================

@@ -24,6 +24,12 @@ static const char* g_current_test = nullptr;
                 "[TEST] [FAIL] %s:%d: CHECK(%s) failed\n", \
                 __FILE__, __LINE__, #expr);                \
             g_fail_count++;                                \
-            return;                                        \
         }                                                  \
     } while (0)
+
+#define ASSERT_EQ(lhs, rhs) CHECK((lhs) == (rhs))
+#define ASSERT_NEQ(lhs, rhs) CHECK((lhs) != (rhs))
+#define ASSERT_GT(lhs, rhs) CHECK((lhs) > (rhs))
+#define ASSERT_GE(lhs, rhs) CHECK((lhs) >= (rhs))
+#define ASSERT_LT(lhs, rhs) CHECK((lhs) < (rhs))
+#define ASSERT_LE(lhs, rhs) CHECK((lhs) <= (rhs))

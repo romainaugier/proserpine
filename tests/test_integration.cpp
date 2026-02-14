@@ -20,6 +20,11 @@
 static bool g_gpu_available = false;
 static proserpine::VulkanContext* g_ctx = nullptr;
 
+static auto error_exit_callback = [](const proserpine::Error& err) -> void {
+    std::fprintf(stdout, "Error: %s", err.message.c_str());
+    std::exit(1);
+};
+
 // Try to create a minimal context. Returns false if no device is found.
 bool try_create_context(proserpine::VulkanContext& ctx)
 {
@@ -95,7 +100,7 @@ void test_buffer_creation()
                 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
     bci.memory_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
-    auto buf = g_ctx->create_buffer(bci);
+    auto buf = g_ctx->create_buffer(bci).value_or(error_exit_callback);
     CHECK(buf.handle() != VK_NULL_HANDLE);
     CHECK(buf.size() == 1024);
     CHECK(buf.device_address() != 0);  // BDA should be non-zero
@@ -113,7 +118,7 @@ void test_host_visible_buffer()
     bci.memory_flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
-    auto buf = g_ctx->create_buffer(bci);
+    auto buf = g_ctx->create_buffer(bci).value_or(error_exit_callback);
     CHECK(buf.handle() != VK_NULL_HANDLE);
     CHECK(buf.mapped_ptr() != nullptr);
 
@@ -133,7 +138,7 @@ void test_buffer_move()
     bci.size  = 512;
     bci.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
 
-    auto a = g_ctx->create_buffer(bci);
+    auto a = g_ctx->create_buffer(bci).value_or(error_exit_callback);
     VkBuffer raw = a.handle();
     CHECK(raw != VK_NULL_HANDLE);
 
@@ -153,7 +158,7 @@ void test_image_creation()
     ici.format = VK_FORMAT_R8G8B8A8_UNORM;
     ici.usage  = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
-    auto img = g_ctx->create_image(ici);
+    auto img = g_ctx->create_image(ici).value_or(error_exit_callback);
     CHECK(img.handle() != VK_NULL_HANDLE);
     CHECK(img.view()   != VK_NULL_HANDLE);
     CHECK(img.format()  == VK_FORMAT_R8G8B8A8_UNORM);
@@ -172,7 +177,7 @@ void test_depth_image()
     ici.format = VK_FORMAT_D32_SFLOAT;
     ici.usage  = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 
-    auto img = g_ctx->create_image(ici);
+    auto img = g_ctx->create_image(ici).value_or(error_exit_callback);
     CHECK(img.handle() != VK_NULL_HANDLE);
     CHECK(img.view()   != VK_NULL_HANDLE);
     CHECK(img.format()  == VK_FORMAT_D32_SFLOAT);
@@ -184,7 +189,7 @@ void test_timeline_semaphore()
 {
     TEST_BEGIN("Timeline semaphore creation and signaling");
 
-    auto sem = g_ctx->create_timeline_semaphore(0);
+    auto sem = g_ctx->create_timeline_semaphore(0).value_or(error_exit_callback);
     CHECK(sem.handle() != VK_NULL_HANDLE);
     CHECK(sem.counter() == 0);
 
@@ -203,7 +208,7 @@ void test_timeline_semaphore_move()
 {
     TEST_BEGIN("Timeline semaphore move");
 
-    auto a = g_ctx->create_timeline_semaphore(10);
+    auto a = g_ctx->create_timeline_semaphore(10).value_or(error_exit_callback);
     VkSemaphore raw = a.handle();
 
     proserpine::TimelineSemaphore b = std::move(a);
@@ -273,7 +278,7 @@ void test_staging_buffer_upload()
     bci.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     bci.memory_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
-    auto dst = g_ctx->create_buffer(bci);
+    auto dst = g_ctx->create_buffer(bci).value_or(error_exit_callback);
     CHECK(dst.handle() != VK_NULL_HANDLE);
 
     std::vector<uint8_t> data(256, 0xCD);
@@ -293,7 +298,7 @@ void test_staging_image_upload()
     ici.format = VK_FORMAT_R8G8B8A8_UNORM;
     ici.usage  = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
-    auto img = g_ctx->create_image(ici);
+    auto img = g_ctx->create_image(ici).value_or(error_exit_callback);
     CHECK(img.handle() != VK_NULL_HANDLE);
 
     std::vector<uint8_t> pixels(16 * 16 * 4, 0xFF);
@@ -307,7 +312,7 @@ void test_timeline_callback_system()
 {
     TEST_BEGIN("TimelineCallbackSystem deferred execution");
 
-    auto sem = g_ctx->create_timeline_semaphore(0);
+    auto sem = g_ctx->create_timeline_semaphore(0).value_or(error_exit_callback);
     auto& cbs = g_ctx->timeline_callbacks();
 
     std::atomic<bool> called{false};
@@ -347,7 +352,7 @@ void test_multiple_buffer_lifecycle()
         proserpine::Buffer::CreateInfo buffer_create_info;
         buffer_create_info.size  = 1024 * (i + 1);
         buffer_create_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-        buffers.push_back(g_ctx->create_buffer(buffer_create_info));
+        buffers.push_back(g_ctx->create_buffer(buffer_create_info).value_or(error_exit_callback));
         CHECK(buffers.back().handle() != VK_NULL_HANDLE);
     }
 
