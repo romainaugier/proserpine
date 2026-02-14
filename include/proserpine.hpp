@@ -347,70 +347,6 @@ struct FeaturesRequested
     std::vector<const char*> extra_device_extensions;
 };
 
-// ============================================================================
-//  Vulkan handle wrapper
-// ============================================================================
-
-template <typename HandleType>
-class UniqueVulkanHandle
-{
-public:
-    using deleter_fn = std::function<void(HandleType)>;
-
-    UniqueVulkanHandle() = default;
-
-    UniqueVulkanHandle(HandleType handle, deleter_fn deleter) : _handle(handle),
-                                                                _deleter(std::move(deleter)) {}
-
-    ~UniqueVulkanHandle() { this->reset(); }
-
-    UniqueVulkanHandle(const UniqueVulkanHandle&) = delete;
-    UniqueVulkanHandle& operator=(const UniqueVulkanHandle&) = delete;
-
-    UniqueVulkanHandle(UniqueVulkanHandle&& other) noexcept : _handle(other._handle),
-                                                              _deleter(std::move(other._deleter))
-    {
-        other._handle = VK_NULL_HANDLE;
-    }
-
-    UniqueVulkanHandle& operator=(UniqueVulkanHandle&& other) noexcept
-    {
-        if(this != &other)
-        {
-            this->reset();
-            this->_handle  = other._handle;
-            this->_deleter = std::move(other._deleter);
-            other._handle = VK_NULL_HANDLE;
-        }
-
-        return *this;
-    }
-
-    HandleType get() const { return this->_handle; }
-    operator HandleType() const { return this->_handle; }
-
-    inline void reset(HandleType new_handle = VK_NULL_HANDLE)
-    {
-        if(this->_handle != VK_NULL_HANDLE && this->_deleter)
-            this->_deleter(this->_handle);
-
-        this->_handle = new_handle;
-    }
-
-    inline HandleType release()
-    {
-        HandleType h = this->_handle;
-        this->_handle = VK_NULL_HANDLE;
-        return h;
-    }
-
-    inline explicit operator bool() const { return this->_handle != VK_NULL_HANDLE; }
-
-private:
-    HandleType _handle = VK_NULL_HANDLE;
-    deleter_fn _deleter;
-};
-
 // =============================================================================
 //  TimelineSemaphore
 // =============================================================================
@@ -422,10 +358,8 @@ public:
     TimelineSemaphore(VkDevice device, std::uint64_t initial_value = 0);
     ~TimelineSemaphore();
 
-    TimelineSemaphore(const TimelineSemaphore&) = delete;
-    TimelineSemaphore& operator=(const TimelineSemaphore&) = delete;
-    TimelineSemaphore(TimelineSemaphore&& other) noexcept;
-    TimelineSemaphore& operator=(TimelineSemaphore&& other) noexcept;
+    PROSERPINE_NON_COPYABLE(TimelineSemaphore);
+    PROSERPINE_MOVABLE(TimelineSemaphore);
 
     inline VkSemaphore handle() const { return this->_sema; }
     inline operator VkSemaphore() const { return this->_sema; }
@@ -450,8 +384,7 @@ public:
     explicit TimelineCallbackSystem(VkDevice device);
     ~TimelineCallbackSystem();
 
-    TimelineCallbackSystem(const TimelineCallbackSystem&) = delete;
-    TimelineCallbackSystem& operator=(const TimelineCallbackSystem&) = delete;
+    PROSERPINE_NON_COPYABLE(TimelineCallbackSystem);
 
     void enqueue(VkSemaphore semaphore,
                  std::uint64_t wait_value,
@@ -519,10 +452,8 @@ public:
            const Buffer::CreateInfo& info);
     ~Buffer();
 
-    Buffer(const Buffer&) = delete;
-    Buffer& operator=(const Buffer&) = delete;
-    Buffer(Buffer&& other) noexcept;
-    Buffer& operator=(Buffer&& other) noexcept;
+    PROSERPINE_NON_COPYABLE(Buffer);
+    PROSERPINE_MOVABLE(Buffer);
 
     inline VkBuffer handle() const { return this->_buffer; }
     inline VkDeviceMemory memory() const { return this->_memory; }
@@ -571,10 +502,8 @@ public:
           const Image::CreateInfo& info);
     ~Image();
 
-    Image(const Image&) = delete;
-    Image& operator=(const Image&) = delete;
-    Image(Image&& other) noexcept;
-    Image& operator=(Image&& other) noexcept;
+    PROSERPINE_NON_COPYABLE(Image);
+    PROSERPINE_MOVABLE(Image);
 
     inline VkImage handle() const { return this->_image; }
     inline VkImageView view() const { return this->_view; }
@@ -611,10 +540,8 @@ public:
                          VkDeviceSize capacity = 64 * 1024 * 1024);
     ~StagingBufferManager();
 
-    StagingBufferManager(const StagingBufferManager&) = delete;
-    StagingBufferManager& operator=(const StagingBufferManager&) = delete;
-    StagingBufferManager(StagingBufferManager&& other) noexcept;
-    StagingBufferManager& operator=(StagingBufferManager&& other) noexcept;
+    PROSERPINE_NON_COPYABLE(StagingBufferManager);
+    PROSERPINE_MOVABLE(StagingBufferManager);
 
     void upload_to_buffer(const void* data,
                           VkDeviceSize size,
@@ -676,11 +603,8 @@ public:
 
     ~DescriptorPool();
 
-    DescriptorPool(const DescriptorPool&) = delete;
-    DescriptorPool& operator=(const DescriptorPool&) = delete;
-
-    DescriptorPool(DescriptorPool&& other) noexcept;
-    DescriptorPool& operator=(DescriptorPool&& other) noexcept;
+    PROSERPINE_NON_COPYABLE(DescriptorPool);
+    PROSERPINE_MOVABLE(DescriptorPool);
 
     inline VkDescriptorPool pool() const { return this->_pool; }
 
@@ -702,11 +626,8 @@ class DescriptorSet
 public:
     ~DescriptorSet();
 
-    DescriptorSet(const DescriptorSet&) = delete;
-    DescriptorSet& operator=(const DescriptorSet&) = delete;
-
-    DescriptorSet(DescriptorSet&& other) noexcept;
-    DescriptorSet& operator=(DescriptorSet&& other) noexcept;
+    PROSERPINE_NON_COPYABLE(DescriptorSet);
+    PROSERPINE_MOVABLE(DescriptorSet);
 
     inline const VkDescriptorSet& handle() const { return this->_set; }
 
@@ -836,10 +757,8 @@ public:
     ShaderModule();
     ~ShaderModule();
 
-    ShaderModule(const ShaderModule&) = delete;
-    ShaderModule& operator=(const ShaderModule&) = delete;
-    ShaderModule(ShaderModule&& other) noexcept;
-    ShaderModule& operator=(ShaderModule&& other) noexcept;
+    PROSERPINE_NON_COPYABLE(ShaderModule);
+    PROSERPINE_MOVABLE(ShaderModule);
 
     static Expected<ShaderModule> create(VkDevice device,
                                          const std::vector<std::uint32_t>& spirv,
@@ -875,10 +794,8 @@ public:
     PipelineLayout();
     ~PipelineLayout();
 
-    PipelineLayout(const PipelineLayout&) = delete;
-    PipelineLayout& operator=(const PipelineLayout&) = delete;
-    PipelineLayout(PipelineLayout&& other) noexcept;
-    PipelineLayout& operator=(PipelineLayout&& other) noexcept;
+    PROSERPINE_NON_COPYABLE(PipelineLayout);
+    PROSERPINE_MOVABLE(PipelineLayout);
 
     inline VkPipelineLayout handle() const { return this->_layout; }
     inline operator VkPipelineLayout() const { return this->_layout; }
@@ -974,10 +891,8 @@ public:
     GraphicsPipeline();
     ~GraphicsPipeline();
 
-    GraphicsPipeline(const GraphicsPipeline&) = delete;
-    GraphicsPipeline& operator=(const GraphicsPipeline&) = delete;
-    GraphicsPipeline(GraphicsPipeline&& other) noexcept;
-    GraphicsPipeline& operator=(GraphicsPipeline&& other) noexcept;
+    PROSERPINE_NON_COPYABLE(GraphicsPipeline);
+    PROSERPINE_MOVABLE(GraphicsPipeline);
 
     inline VkPipeline handle() const { return this->_pipeline; }
     inline operator VkPipeline() const { return this->_pipeline; }
@@ -1003,10 +918,8 @@ public:
     ComputePipeline();
     ~ComputePipeline();
 
-    ComputePipeline(const ComputePipeline&) = delete;
-    ComputePipeline& operator=(const ComputePipeline&) = delete;
-    ComputePipeline(ComputePipeline&& other) noexcept;
-    ComputePipeline& operator=(ComputePipeline&& other) noexcept;
+    PROSERPINE_NON_COPYABLE(ComputePipeline);
+    PROSERPINE_MOVABLE(ComputePipeline);
 
     inline VkPipeline handle() const { return this->_pipeline; }
     inline operator VkPipeline() const { return this->_pipeline; }
@@ -1015,9 +928,10 @@ private:
     VkDevice _device   = VK_NULL_HANDLE;
     VkPipeline _pipeline = VK_NULL_HANDLE;
 
-    friend Expected<ComputePipeline> create_compute_pipeline(
-        VkDevice device, const ShaderModule& shader,
-        VkPipelineLayout layout, const char* entry);
+    friend Expected<ComputePipeline> create_compute_pipeline(VkDevice device,
+                                                             const ShaderModule& shader,
+                                                             VkPipelineLayout layout,
+                                                             const char* entry);
 };
 
 Expected<GraphicsPipeline> create_graphics_pipeline(VkDevice device,
@@ -1045,8 +959,8 @@ public:
     explicit FencePool(VkDevice device);
     ~FencePool();
 
-    FencePool(const FencePool&) = delete;
-    FencePool& operator=(const FencePool&) = delete;
+    PROSERPINE_NON_COPYABLE(FencePool);
+    PROSERPINE_MOVABLE(FencePool);
 
     VkFence acquire(bool signaled = false);
     void release(VkFence fence);
@@ -1081,10 +995,8 @@ public:
     VulkanContext() = default;
     ~VulkanContext();
 
-    VulkanContext(const VulkanContext&) = delete;
-    VulkanContext& operator=(const VulkanContext&) = delete;
-    VulkanContext(VulkanContext&& other) noexcept;
-    VulkanContext& operator=(VulkanContext&& other) noexcept;
+    PROSERPINE_NON_COPYABLE(VulkanContext);
+    PROSERPINE_MOVABLE(VulkanContext);
 
     inline VkInstance instance() const { return this->_instance; }
     inline VkPhysicalDevice physical_device() const { return this->_physical_device; }
@@ -4174,6 +4086,27 @@ inline FencePool::~FencePool()
 
     for(auto f : this->_all)
         vkDestroyFence(this->_device, f, nullptr);
+}
+
+inline FencePool::FencePool(FencePool&& other) noexcept : _device(other._device),
+                                                          _free(std::move(other._free)),
+                                                          _all(std::move(other._all))
+{
+    other._device = VK_NULL_HANDLE;
+}
+
+inline FencePool& FencePool::operator=(FencePool&& other) noexcept
+{
+    if(this != &other)
+    {
+        this->_device = other._device;
+        this->_free = std::move(other._free);
+        this->_all = std::move(other._all);
+
+        other._device = VK_NULL_HANDLE;
+    }
+
+    return *this;
 }
 
 inline VkFence FencePool::acquire(bool signaled)
