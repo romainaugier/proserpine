@@ -1808,6 +1808,8 @@ inline VulkanContext::VulkanContext(VulkanContext&& other) noexcept : _instance(
                                                                       _timeline_callbacks(std::move(other._timeline_callbacks)),
                                                                       _renderdoc(std::move(other._renderdoc)),
                                                                       _fence_pool(std::move(other._fence_pool)),
+                                                                      _descriptor_pool(std::move(other._descriptor_pool)),
+                                                                      _command_profiler(std::move(other._command_profiler)),
                                                                       _validation_enabled(other._validation_enabled)
 {
     std::memcpy(this->_queues, other._queues, sizeof(_queues));
@@ -1839,6 +1841,8 @@ inline VulkanContext& VulkanContext::operator=(VulkanContext&& other) noexcept
         this->_timeline_callbacks = std::move(other._timeline_callbacks);
         this->_renderdoc = std::move(other._renderdoc);
         this->_fence_pool = std::move(other._fence_pool);
+        this->_descriptor_pool = std::move(other._descriptor_pool);
+        this->_command_profiler = std::move(other._command_profiler);
         this->_validation_enabled = other._validation_enabled;
 
         std::memcpy(this->_queues, other._queues, sizeof(_queues));
