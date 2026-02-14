@@ -417,11 +417,10 @@ private:
 class RenderDocIntegration
 {
 public:
-    RenderDocIntegration() = default;
+    RenderDocIntegration();
 
     inline bool is_available() const noexcept { return this->_api != nullptr; }
 
-    bool initialize();
     void start_capture();
     void end_capture();
 
@@ -1699,7 +1698,6 @@ inline Expected<VulkanContext> VulkanContext::create(VulkanContext::CreateInfo& 
     if(result != VK_SUCCESS)
     {
         __LOG_ERROR("Failed to create a new VulkanContext");
-
         return Error(result, "Failed to create VulkanContext instance");
     }
 
@@ -1715,13 +1713,13 @@ inline Expected<VulkanContext> VulkanContext::create(VulkanContext::CreateInfo& 
     ctx._physical_device = ctx._selected_device.physical_device;
     ctx._device_properties = ctx._selected_device.props;
 
-    for(const auto extension : info.extra_instance_extensions)
+    if(std::any_of(info.extra_instance_extensions.begin(),
+                   info.extra_instance_extensions.end(), [](const char* ext_name) {
+                       return std::strcmp(ext_name, VK_KHR_SURFACE_EXTENSION_NAME) == 0;
+                   }))
     {
-        if(std::strcmp(extension, VK_KHR_SURFACE_EXTENSION_NAME) == 0)
-        {
-            __LOG_TRACE("Enabling VK_KHR_Surface extension");
-            info.features.surface = true;
-        }
+        __LOG_TRACE("Enabling VK_KHR_Surface extension");
+        info.features.surface = true;
     }
 
     result = ctx.create_logical_device(ctx._selected_device, info.features);
@@ -1830,27 +1828,28 @@ inline VulkanContext& VulkanContext::operator=(VulkanContext&& other) noexcept
     {
         this->destroy();
 
-        this->_instance        = other._instance;
+        this->_instance = other._instance;
         this->_debug_messenger = other._debug_messenger;
         this->_physical_device = other._physical_device;
-        this->_device          = other._device;
-        this->_device_properties    = std::move(other._device_properties);
+        this->_device = other._device;
+        this->_device_properties = std::move(other._device_properties);
         this->_selected_device = std::move(other._selected_device);
         this->_enabled_device_extensions = std::move(other._enabled_device_extensions);
-        this->_staging             = std::move(other._staging);
-        this->_timeline_callbacks  = std::move(other._timeline_callbacks);
-        this->_renderdoc           = std::move(other._renderdoc);
-        this->_fence_pool          = std::move(other._fence_pool);
-        this->_validation_enabled  = other._validation_enabled;
+        this->_staging = std::move(other._staging);
+        this->_timeline_callbacks = std::move(other._timeline_callbacks);
+        this->_renderdoc = std::move(other._renderdoc);
+        this->_fence_pool = std::move(other._fence_pool);
+        this->_validation_enabled = other._validation_enabled;
 
         std::memcpy(this->_queues, other._queues, sizeof(_queues));
         std::memcpy(this->_immediate_contexts, other._immediate_contexts, sizeof(_immediate_contexts));
         std::memcpy(this->_feature_flags, other._feature_flags, sizeof(_feature_flags));
 
-        other._instance        = VK_NULL_HANDLE;
+        other._instance = VK_NULL_HANDLE;
         other._debug_messenger = VK_NULL_HANDLE;
         other._physical_device = VK_NULL_HANDLE;
-        other._device          = VK_NULL_HANDLE;
+        other._device = VK_NULL_HANDLE;
+
         std::memset(other._queues, 0, sizeof(other._queues));
         std::memset(other._immediate_contexts, 0, sizeof(other._immediate_contexts));
     }
@@ -1920,10 +1919,7 @@ inline TimelineCallbackSystem& VulkanContext::timeline_callbacks()
 inline RenderDocIntegration& VulkanContext::renderdoc()
 {
     if(!this->_renderdoc)
-    {
         this->_renderdoc = std::make_unique<RenderDocIntegration>();
-        this->_renderdoc->initialize();
-    }
 
     return *this->_renderdoc;
 }
@@ -2242,7 +2238,7 @@ inline void TimelineCallbackSystem::worker_loop()
 //  RenderDocIntegration implementation
 // =============================================================================
 
-inline bool RenderDocIntegration::initialize()
+inline RenderDocIntegration::RenderDocIntegration()
 {
     __LOG_TRACE("Initializing RenderDoc integration");
 
@@ -2254,7 +2250,7 @@ inline bool RenderDocIntegration::initialize()
     if(this->_module == nullptr)
     {
         __LOG_WARN("Cannot find librenderdoc.so, disabling RenderDoc captures");
-        return false;
+        return;
     }
 
     auto get_api = reinterpret_cast<GetApiFn>(dlsym(this->_module, "RENDERDOC_GetAPI"));
@@ -2283,13 +2279,13 @@ inline bool RenderDocIntegration::initialize()
     if(this->_module == nullptr)
     {
         __LOG_WARN("Cannot find or load renderdoc.dll, disabling RenderDoc captures");
-        return false;
+        return;
     }
 
     auto get_api = reinterpret_cast<GetApiFn>(GetProcAddress(static_cast<HMODULE>(this->_module),
                                                              "RENDERDOC_GetAPI"));
 #else
-    return false;
+    return;
 #endif // defined(PROSERPINE_PLATFORM_LINUX)
 
     __LOG_TRACE("Found RenderDoc library");
@@ -2297,7 +2293,7 @@ inline bool RenderDocIntegration::initialize()
     if(get_api == nullptr)
     {
         __LOG_WARN("Cannot find RENDERDOC_GetAPI proc, disabling RenderDoc captures");
-        return false;
+        return;
     }
 
     int ret = get_api(10600, &this->_api); // RENDERDOC_API_VERSION_1_6_0
@@ -2305,12 +2301,12 @@ inline bool RenderDocIntegration::initialize()
     if(ret != 1 || this->_api == nullptr)
     {
         __LOG_ERROR("Cannot get RenderDoc api, disabling RenderDoc captures");
-        return false;
+        return;
     }
 
     __LOG_INFO("Found RenderDoc api, enabling RenderDoc captures");
 
-    return true;
+    return;
 }
 
 inline void RenderDocIntegration::start_capture()
@@ -2460,7 +2456,6 @@ inline Buffer& Buffer::operator=(Buffer&& other) noexcept
 
             if(this->_memory != VK_NULL_HANDLE)
                 vkFreeMemory(_device, _memory, nullptr);
-
         }
 
         this->_device = other._device;

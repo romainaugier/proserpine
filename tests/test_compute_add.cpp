@@ -117,7 +117,7 @@ int main(int argc, char** argv)
     });
 
     // Get elapsed time (see CommandProfiler::ElapsedUnit for available time units)
-    PROSERPINE_LOG_INFO("elapsed: %f ns", ctx.command_profiler().elapsed());
+    PROSERPINE_LOG_INFO("elapsed: %f ms", ctx.command_profiler().elapsed());
 
     // Read the output back
     proserpine::Buffer readback_buffer = ctx.create_buffer({
