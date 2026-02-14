@@ -55,6 +55,7 @@ if __name__ == "__main__":
     buf.write("CompileFlags:\n")
     buf.write("    Add:\n")
     buf.write("    - \"-Iinclude\"\n")
+    buf.write("    - \"-Itests/utils\"\n")
     buf.write("    - \"-DPROSERPINE_IMPLEMENTATION\"\n")
     buf.write("    - \"-DPROSERPINE_INCLUDE_VULKAN\"\n")
     buf.write(f"    - \"-std=c++{cpp_std}\"\n")

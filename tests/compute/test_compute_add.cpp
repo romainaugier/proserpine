@@ -2,6 +2,9 @@
 // Copyright (c) 2026 - Present Romain Augier MIT License
 // All rights reserved
 
+// This file shows a very simple example of how to use proserpine to set up
+// some buffers, a compute shader, execute this shader, and get back the result
+
 // logger defines all macros for proserpine logging
 #include "logger.hpp"
 
