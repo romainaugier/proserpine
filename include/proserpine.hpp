@@ -4161,6 +4161,9 @@ inline void FencePool::release(VkFence fence)
 #undef __FMT_U64
 #undef __FMT_U64H
 #undef __FMT_I64
+#undef __FMT_BOOL
+#undef __FMT_FLT32
+#undef __FMT_FLT64
 
 #undef __LOG_ERROR
 #undef __LOG_WARN
