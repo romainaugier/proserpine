@@ -10,10 +10,8 @@ set(GLSLC_ARGS --target-env=vulkan1.4 -O)
 set(TEST_UTILS_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/utils)
 
 add_subdirectory(integration)
-
 add_subdirectory(compute)
 
-# Test vk_cube (we don't add it to tests since it will open a Window, needs to be run manually)
 if(BUILD_GRAPHICS_TESTS)
     add_subdirectory(graphics)
 endif()

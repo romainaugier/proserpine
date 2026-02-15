@@ -199,6 +199,7 @@ namespace proserpine {
 class VulkanContext;
 class Buffer;
 class Image;
+class SwapChain;
 class TimelineSemaphore;
 class TimelineCallbackSystem;
 class RenderDocIntegration;
@@ -263,6 +264,7 @@ enum class QueueType : std::uint8_t {
     Compute,
     Transfer,
     SparseBinding,
+    Present,
     Count,
 };
 
@@ -345,6 +347,15 @@ struct FeaturesRequested
     bool shader_float64 = false;
 
     std::vector<const char*> extra_device_extensions;
+};
+
+// =============================================================================
+//  SwapChain
+// =============================================================================
+
+class SwapChain
+{
+
 };
 
 // =============================================================================
@@ -977,6 +988,12 @@ private:
 class VulkanContext
 {
 public:
+    struct SwapChainInfo {
+        VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
+        VkColorSpaceKHR colorspace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+        int present_mode = VK_PRESENT_MODE_FIFO_KHR;
+    };
+
     struct CreateInfo {
         const char* application_name = "Vulkan App";
         const char* engine_name = "Proserpine";
@@ -987,6 +1004,7 @@ public:
         DeviceFilter device_filter;
         FeaturesRequested features;
         DescriptorPool::CreateInfo descriptor_pool_info;
+        SwapChainInfo swapchain_info;
     };
 
     static Expected<VulkanContext> create(VulkanContext::CreateInfo& info);
@@ -997,9 +1015,12 @@ public:
     PROSERPINE_NON_COPYABLE(VulkanContext);
     PROSERPINE_MOVABLE(VulkanContext);
 
+    bool create_surface(std::function<bool(VkInstance, VkSurfaceKHR*)> create_callback);
+
     inline VkInstance instance() const { return this->_instance; }
     inline VkPhysicalDevice physical_device() const { return this->_physical_device; }
     inline VkDevice device() const { return this->_device; }
+    inline VkSurfaceKHR surface() const { return this->_surface; }
 
     VkQueue queue(QueueType type, std::uint32_t index = 0) const;
     std::uint32_t queue_family(QueueType type) const;
@@ -1033,6 +1054,7 @@ private:
     VkDebugUtilsMessengerEXT _debug_messenger = VK_NULL_HANDLE;
     VkPhysicalDevice _physical_device = VK_NULL_HANDLE;
     VkDevice _device = VK_NULL_HANDLE;
+    VkSurfaceKHR _surface = VK_NULL_HANDLE;
 
     DeviceProperties _device_properties;
     SelectedDevice _selected_device;
@@ -1074,8 +1096,7 @@ private:
                                     VkInstance& out_instance,
                                     VkDebugUtilsMessengerEXT& out_messenger);
 
-    static Expected<SelectedDevice> select_device(VkInstance instance,
-                                                  const DeviceFilter& filter);
+    Expected<SelectedDevice> select_device(const DeviceFilter& filter);
 
     VkResult create_logical_device(const SelectedDevice& selected,
                                    const FeaturesRequested& features);
@@ -1266,13 +1287,12 @@ inline VkResult VulkanContext::create_instance(const CreateInfo& info,
 //  VulkanContext::select_device
 // =============================================================================
 
-inline Expected<SelectedDevice> VulkanContext::select_device(VkInstance instance,
-                                                             const DeviceFilter& filter)
+inline Expected<SelectedDevice> VulkanContext::select_device(const DeviceFilter& filter)
 {
     __LOG_TRACE("Selecting device");
 
     std::uint32_t count = 0;
-    vkEnumeratePhysicalDevices(instance, &count, nullptr);
+    vkEnumeratePhysicalDevices(this->_instance, &count, nullptr);
 
     if(count == 0)
         return Error("No Vulkan physical devices found");
@@ -1280,7 +1300,7 @@ inline Expected<SelectedDevice> VulkanContext::select_device(VkInstance instance
     __LOG_TRACE(__FMT_U32 " device(s) available", count);
 
     std::vector<VkPhysicalDevice> physical_devices(count);
-    vkEnumeratePhysicalDevices(instance, &count, physical_devices.data());
+    vkEnumeratePhysicalDevices(this->_instance, &count, physical_devices.data());
 
     struct Candidate
     {
@@ -1351,6 +1371,7 @@ inline Expected<SelectedDevice> VulkanContext::select_device(VkInstance instance
 
         // Check queue family requirements
         bool has_graphics = false;
+        bool has_present = false;
 
         for(std::uint32_t i = 0; i < qf_count; ++i)
         {
@@ -1369,11 +1390,29 @@ inline Expected<SelectedDevice> VulkanContext::select_device(VkInstance instance
 
                 break;
             }
+
+            if(this->_surface != VK_NULL_HANDLE)
+            {
+                VkBool32 present_support = false;
+                vkGetPhysicalDeviceSurfaceSupportKHR(physical_device,
+                                                     i,
+                                                     this->_surface,
+                                                     &present_support);
+
+                if(!has_present && present_support)
+                    has_present = true;
+            }
         }
 
         if(!has_graphics)
         {
-            __LOG_TRACE("Device has not graphics queue family");
+            __LOG_TRACE("Device has no graphics queue family");
+            continue;
+        }
+
+        if(this->_surface != VK_NULL_HANDLE && !has_present)
+        {
+            __LOG_TRACE("Device has no present queue family");
             continue;
         }
 
@@ -1430,22 +1469,47 @@ inline Expected<SelectedDevice> VulkanContext::select_device(VkInstance instance
 
     for(std::uint32_t i = 0; i < qf_count; ++i)
     {
-        if(qfams[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+        // Graphics Queue Family
+        if(qfams[i].queueFlags & VK_QUEUE_GRAPHICS_BIT &&
+           !selected.queue_family_valid[static_cast<std::size_t>(QueueType::Graphics)])
         {
             selected.queue_family_indices[static_cast<std::size_t>(QueueType::Graphics)] = i;
-            selected.queue_family_valid[static_cast<std::size_t>(QueueType::Graphics)]   = true;
-            break;
+            selected.queue_family_valid[static_cast<std::size_t>(QueueType::Graphics)] = true;
         }
-    }
 
-    std::uint32_t gfx_family = selected.queue_family_indices[static_cast<std::size_t>(QueueType::Graphics)];
-
-    for(std::uint32_t i = 0; i < qf_count; ++i)
-    {
-        if((qfams[i].queueFlags & VK_QUEUE_COMPUTE_BIT) && i != gfx_family)
+        // Compute Queue Family
+        if((qfams[i].queueFlags & VK_QUEUE_COMPUTE_BIT) &&
+           i != selected.queue_family_indices[static_cast<std::size_t>(QueueType::Graphics)])
         {
             selected.queue_family_indices[static_cast<std::size_t>(QueueType::Compute)] = i;
-            selected.queue_family_valid[static_cast<std::size_t>(QueueType::Compute)]   = true;
+            selected.queue_family_valid[static_cast<std::size_t>(QueueType::Compute)] = true;
+            break;
+        }
+
+        // Present Queue Family
+        if(this->_surface != VK_NULL_HANDLE)
+        {
+            VkBool32 present_support = false;
+            vkGetPhysicalDeviceSurfaceSupportKHR(selected.physical_device,
+                                                 i,
+                                                 this->_surface,
+                                                 &present_support);
+
+            if(present_support &&
+               !selected.queue_family_valid[static_cast<std::size_t>(QueueType::Present)])
+            {
+                selected.queue_family_indices[static_cast<std::size_t>(QueueType::Present)] = i;
+                selected.queue_family_valid[static_cast<std::size_t>(QueueType::Present)] = true;
+            }
+        }
+
+        // Transfer queue (we prefer a dedicated one)
+        if((qfams[i].queueFlags & VK_QUEUE_TRANSFER_BIT) &&
+           !(qfams[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
+           !(qfams[i].queueFlags & VK_QUEUE_COMPUTE_BIT))
+        {
+            selected.queue_family_indices[static_cast<std::size_t>(QueueType::Transfer)] = i;
+            selected.queue_family_valid[static_cast<std::size_t>(QueueType::Transfer)] = true;
             break;
         }
     }
@@ -1462,19 +1526,6 @@ inline Expected<SelectedDevice> VulkanContext::select_device(VkInstance instance
                 selected.queue_family_valid[static_cast<std::size_t>(QueueType::Compute)]   = true;
                 break;
             }
-        }
-    }
-
-    // Transfer queue (prefer dedicated)
-    for(std::uint32_t i = 0; i < qf_count; ++i)
-    {
-        if((qfams[i].queueFlags & VK_QUEUE_TRANSFER_BIT) &&
-           !(qfams[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
-           !(qfams[i].queueFlags & VK_QUEUE_COMPUTE_BIT))
-        {
-            selected.queue_family_indices[static_cast<std::size_t>(QueueType::Transfer)] = i;
-            selected.queue_family_valid[static_cast<std::size_t>(QueueType::Transfer)]   = true;
-            break;
         }
     }
 
@@ -1593,15 +1644,15 @@ inline VkResult VulkanContext::create_logical_device(const SelectedDevice& selec
 
     if(features.descriptor_indexing)
     {
-        f12.descriptorIndexing                            = VK_TRUE;
-        f12.shaderSampledImageArrayNonUniformIndexing     = VK_TRUE;
-        f12.descriptorBindingVariableDescriptorCount      = VK_TRUE;
-        f12.runtimeDescriptorArray                        = VK_TRUE;
-        f12.descriptorBindingSampledImageUpdateAfterBind   = VK_TRUE;
-        f12.descriptorBindingStorageBufferUpdateAfterBind  = VK_TRUE;
-        f12.descriptorBindingStorageImageUpdateAfterBind   = VK_TRUE;
-        f12.descriptorBindingUniformBufferUpdateAfterBind  = VK_TRUE;
-        f12.descriptorBindingPartiallyBound               = VK_TRUE;
+        f12.descriptorIndexing = VK_TRUE;
+        f12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+        f12.descriptorBindingVariableDescriptorCount = VK_TRUE;
+        f12.runtimeDescriptorArray = VK_TRUE;
+        f12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+        f12.descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE;
+        f12.descriptorBindingStorageImageUpdateAfterBind = VK_TRUE;
+        f12.descriptorBindingUniformBufferUpdateAfterBind = VK_TRUE;
+        f12.descriptorBindingPartiallyBound = VK_TRUE;
         this->_feature_flags[static_cast<std::size_t>(Feature::DescriptorIndexing)] = true;
     }
 
@@ -1644,6 +1695,9 @@ inline VkResult VulkanContext::create_logical_device(const SelectedDevice& selec
         return result;
     }
 
+    // Create Queues
+    __LOG_TRACE("Creating logical device queues");
+
     for(std::size_t i = 0; i < static_cast<std::size_t>(QueueType::Count); ++i)
     {
         if(selected.queue_family_valid[i])
@@ -1677,6 +1731,61 @@ inline VkResult VulkanContext::create_logical_device(const SelectedDevice& selec
         }
     }
 
+    // Create SwapChain
+    if(this->_surface != VK_NULL_HANDLE)
+    {
+        __LOG_TRACE("Creating logical device swapchain");
+
+        VkPhysicalDeviceSurfaceInfo2KHR surface_info{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR};
+        surface_info.pNext = nullptr;
+        surface_info.surface = this->_surface;
+
+        VkSurfaceCapabilities2KHR capabilities{VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR};
+        vkGetPhysicalDeviceSurfaceCapabilities2KHR(this->_physical_device,
+                                                   &surface_info,
+                                                   &capabilities);
+
+        std::vector<VkSurfaceFormat2KHR> formats;
+        std::uint32_t formats_count;
+
+        vkGetPhysicalDeviceSurfaceFormats2KHR(this->_physical_device,
+                                              &surface_info,
+                                              &formats_count,
+                                              nullptr);
+
+        if(formats_count == 0)
+        {
+            __LOG_ERROR("Could not find any format for swapchain");
+            return VK_ERROR_UNKNOWN;
+        }
+
+        formats.resize(static_cast<std::size_t>(formats_count));
+        vkGetPhysicalDeviceSurfaceFormats2KHR(this->_physical_device,
+                                                &surface_info,
+                                                &formats_count,
+                                                formats.data());
+
+        std::vector<VkPresentModeKHR> present_modes;
+        std::uint32_t present_modes_count;
+
+        vkGetPhysicalDeviceSurfacePresentModesKHR(this->_physical_device,
+                                                  this->_surface,
+                                                  &present_modes_count,
+                                                  nullptr);
+
+        if(present_modes_count == 0)
+        {
+            __LOG_ERROR("Could not find any present mode for swapchain");
+            return VK_ERROR_UNKNOWN;
+        }
+
+        present_modes.resize(static_cast<std::size_t>(present_modes_count));
+        vkGetPhysicalDeviceSurfacePresentModesKHR(this->_physical_device,
+                                                    this->_surface,
+                                                    &present_modes_count,
+                                                    present_modes.data());
+    }
+
     __LOG_TRACE("New logical device created successfully");
 
     return VK_SUCCESS;
@@ -1701,7 +1810,7 @@ inline Expected<VulkanContext> VulkanContext::create(VulkanContext::CreateInfo& 
         return Error(result, "Failed to create VulkanContext instance");
     }
 
-    auto selected = select_device(ctx._instance, info.device_filter);
+    auto selected = ctx.select_device(info.device_filter);
 
     if(!selected)
     {
@@ -1743,6 +1852,8 @@ inline Expected<VulkanContext> VulkanContext::create(VulkanContext::CreateInfo& 
 
 inline void VulkanContext::destroy()
 {
+    __LOG_TRACE("VulkanContext: Destroying");
+
     if(this->_device != VK_NULL_HANDLE)
     {
         vkDeviceWaitIdle(this->_device);
@@ -1778,18 +1889,24 @@ inline void VulkanContext::destroy()
         this->_device = VK_NULL_HANDLE;
     }
 
-    if(this->_debug_messenger != VK_NULL_HANDLE && this->_instance != VK_NULL_HANDLE)
-    {
-        auto func = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(this->_instance, "vkDestroyDebugUtilsMessengerEXT"));
-
-        if(func)
-            func(this->_instance, this->_debug_messenger, nullptr);
-
-        this->_debug_messenger = VK_NULL_HANDLE;
-    }
-
     if(this->_instance != VK_NULL_HANDLE)
     {
+        if(this->_surface != VK_NULL_HANDLE)
+        {
+            vkDestroySurfaceKHR(this->_instance, this->_surface, nullptr);
+            this->_surface = VK_NULL_HANDLE;
+        }
+
+        if(this->_debug_messenger != VK_NULL_HANDLE && this->_instance != VK_NULL_HANDLE)
+        {
+            auto func = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(this->_instance, "vkDestroyDebugUtilsMessengerEXT"));
+
+            if(func)
+                func(this->_instance, this->_debug_messenger, nullptr);
+
+            this->_debug_messenger = VK_NULL_HANDLE;
+        }
+
         vkDestroyInstance(this->_instance, nullptr);
         this->_instance = VK_NULL_HANDLE;
     }
@@ -1801,6 +1918,7 @@ inline VulkanContext::VulkanContext(VulkanContext&& other) noexcept : _instance(
                                                                       _debug_messenger(other._debug_messenger),
                                                                       _physical_device(other._physical_device),
                                                                       _device(other._device),
+                                                                      _surface(other._surface),
                                                                       _device_properties(std::move(other._device_properties)),
                                                                       _selected_device(std::move(other._selected_device)),
                                                                       _enabled_device_extensions(std::move(other._enabled_device_extensions)),
@@ -1820,6 +1938,7 @@ inline VulkanContext::VulkanContext(VulkanContext&& other) noexcept : _instance(
     other._debug_messenger = VK_NULL_HANDLE;
     other._physical_device = VK_NULL_HANDLE;
     other._device = VK_NULL_HANDLE;
+    other._surface = VK_NULL_HANDLE;
     std::memset(other._queues, 0, sizeof(other._queues));
     std::memset(other._immediate_contexts, 0, sizeof(other._immediate_contexts));
 }
@@ -1834,6 +1953,7 @@ inline VulkanContext& VulkanContext::operator=(VulkanContext&& other) noexcept
         this->_debug_messenger = other._debug_messenger;
         this->_physical_device = other._physical_device;
         this->_device = other._device;
+        this->_surface = other._surface;
         this->_device_properties = std::move(other._device_properties);
         this->_selected_device = std::move(other._selected_device);
         this->_enabled_device_extensions = std::move(other._enabled_device_extensions);
@@ -1853,6 +1973,7 @@ inline VulkanContext& VulkanContext::operator=(VulkanContext&& other) noexcept
         other._debug_messenger = VK_NULL_HANDLE;
         other._physical_device = VK_NULL_HANDLE;
         other._device = VK_NULL_HANDLE;
+        other._surface = VK_NULL_HANDLE;
 
         std::memset(other._queues, 0, sizeof(other._queues));
         std::memset(other._immediate_contexts, 0, sizeof(other._immediate_contexts));
@@ -1864,6 +1985,21 @@ inline VulkanContext& VulkanContext::operator=(VulkanContext&& other) noexcept
 // =============================================================================
 //  VulkanContext accessors/getters
 // =============================================================================
+
+inline bool VulkanContext::create_surface(std::function<bool(VkInstance, VkSurfaceKHR*)> create_callback)
+{
+    __LOG_TRACE("VulkanContext: Creating a surface");
+
+    PROSERPINE_ASSERT(this->_instance != VK_NULL_HANDLE, "instance is NULL", false);
+
+    if(this->_surface != VK_NULL_HANDLE)
+    {
+        __LOG_TRACE("VulkanContext: Surface has already been created");
+        return true;
+    }
+
+    return create_callback(this->_instance, &this->_surface);
+}
 
 inline VkQueue VulkanContext::queue(QueueType type,
                                     std::uint32_t /* index */) const

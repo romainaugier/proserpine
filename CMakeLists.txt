@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.16)
 
 project(proserpine LANGUAGES CXX)
 
-option(BUILD_GRAPHICS_TESTS "Build testing suite of the graphics system" OFF)
+option(BUILD_GRAPHICS_TESTS "Build testing suite of the graphics system" ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
