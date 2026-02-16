@@ -64,6 +64,7 @@ int main(int argc, char** argv)
     for(std::uint32_t i = 0; i < glfw_exts_count; ++i)
         create_info.extra_instance_extensions.push_back(glfw_exts[i]);
 
+    // Create Context
     proserpine::VulkanContext ctx = proserpine::VulkanContext::create(create_info).value_or(error_exit_callback);
 
     ctx.create_surface([&](VkInstance instance, VkSurfaceKHR* surface) {
@@ -72,6 +73,18 @@ int main(int argc, char** argv)
 
         return true;
     });
+
+    // Create SwapChain
+    proserpine::SwapChain::CreateInfo sc_create_info;
+    sc_create_info.present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
+
+    std::int32_t width, height;
+    glfwGetFramebufferSize(window, &width, &height);
+
+    sc_create_info.extent_width = static_cast<std::uint32_t>(width);
+    sc_create_info.extent_height = static_cast<std::uint32_t>(height);
+
+    proserpine::SwapChain swapchain = ctx.create_swapchain(sc_create_info).value_or(error_exit_callback);
 
     while(!glfwWindowShouldClose(window))
     {
