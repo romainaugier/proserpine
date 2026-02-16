@@ -47,7 +47,7 @@ int main(int argc, char** argv)
 
     // Create the context
     proserpine::VulkanContext::CreateInfo create_info;
-    create_info.application_name = "Test Compute Add";
+    create_info.application_name = "Test Vulkan Cube";
     create_info.enable_validation = true;
     create_info.features.timeline_semaphore = true;
     create_info.features.buffer_device_address = true;
@@ -75,7 +75,7 @@ int main(int argc, char** argv)
 
     while(!glfwWindowShouldClose(window))
     {
-            glfwPollEvents();
+        glfwPollEvents();
     }
 
     glfwDestroyWindow(window);

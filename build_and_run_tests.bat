@@ -21,7 +21,7 @@ if exist %RENDERDOC_INSTALL_DIR% (
 
 if exist build (
     echo Removing old build directory
-    rmdir /s /q build
+    rem rmdir /s /q build
 )
 
 cmake -S . -B build

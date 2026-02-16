@@ -11,6 +11,9 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).parent.parent
 
+GLFW_DIR = ROOT_DIR / "ext/glfw"
+GLFW_INCLUDE_DIR = GLFW_DIR / "include"
+
 CLANGD_FILE_PATH = ROOT_DIR / ".clangd"
 
 COMPILE_FLAGS_PATH = ROOT_DIR / "compile_flags.txt"
@@ -66,11 +69,16 @@ if __name__ == "__main__":
         if vk_sdk_path is not None:
             vk_sdk_path = vk_sdk_path.replace('\\', '/')
             buf.write(f"    - \"-I{vk_sdk_path}/Include\"\n")
+
     elif platform.system() == "Linux":
         vk_include_path = find_vk_include_path_linux()
 
         if vk_include_path is not None:
             buf.write(f"    - \"-I{vk_include_path}\"\n")
+
+    if GLFW_INCLUDE_DIR.exists():
+        include_dir = str(GLFW_INCLUDE_DIR).replace('\\', '/')
+        buf.write(f"    - \"-I{include_dir}\"\n")
 
     buf.write("\n")
     buf.write("Diagnostics:\n")

@@ -128,27 +128,132 @@
         std::abort(); }
 #endif // defined(NDEBUG)
 
-#define PROSERPINE_VK_CHECK(expr, msg)      \
-    do {                                    \
-        VkResult __vk_res = (expr);         \
-        if(__vk_res != VK_SUCCESS)          \
-            return Error(__vk_res, (msg));  \
+#define PROSERPINE_VK_CHECK(expr, msg)     \
+    do {                                   \
+        VkResult __vk_res = (expr);        \
+        if(__vk_res != VK_SUCCESS)         \
+            return Error(__vk_res, (msg)); \
     } while (0)
 
-#define PROSERPINE_VK_CHECK_VOID(expr, msg)                                 \
-    do {                                                                    \
-        VkResult __vk_res = (expr);                                         \
-        if(__vk_res != VK_SUCCESS)                                          \
-            __LOG_ERROR(__FMT_I32 ": " __FMT_STR "", __vk_res, msg);        \
+#define PROSERPINE_VK_CHECK_VOID(expr, msg)                          \
+    do {                                                             \
+        VkResult __vk_res = (expr);                                  \
+        if(__vk_res != VK_SUCCESS)                                   \
+            __LOG_ERROR(__FMT_I32 ": " __FMT_STR "", __vk_res, msg); \
     } while (0)
 
 #define PROSERPINE_WAIT_INFINITE std::numeric_limits<std::uint64_t>::max()
+#define PROSERPINE_INVALID_QUEUE_INDEX std::numeric_limits<std::uint32_t>::max()
 
 #define PROSERPINE_COPYABLE(__class__) __class__(const __class__& other); __class__& operator=(const __class__& other)
 #define PROSERPINE_NON_COPYABLE(__class__) __class__(const __class__&) = delete; __class__& operator=(const __class__&) = delete
-
 #define PROSERPINE_MOVABLE(__class__) __class__(__class__&& other) noexcept; __class__& operator=(__class__&& other) noexcept
-#define PROSERPINE_NON_MOVABLE(__class__) __class__(__class__&&) = delete; __class__& operator=(__class__&&)
+#define PROSERPINE_NON_MOVABLE(__class__) __class__(__class__&&) = delete; __class__& operator=(__class__&&) = delete
+#define PROSERPINE_COPYABLE_MOVABLE(__class__) PROSERPINE_COPYABLE(__class__); PROSERPINE_MOVABLE(__class__)
+#define PROSERPINE_COPYABLE_NON_MOVABLE(__class__) PROSERPINE_COPYABLE(__class__); PROSERPINE_NON_MOVABLE(__class__)
+#define PROSERPINE_NON_COPYABLE_MOVABLE(__class__) PROSERPINE_NON_COPYABLE(__class__); PROSERPINE_MOVABLE(__class__)
+#define PROSERPINE_NON_COPYABLE_NON_MOVABLE(__class__) PROSERPINE_NON_COPYABLE(__class__); PROSERPINE_NON_MOVABLE(__class__)
+
+// Just null
+#define __DETAIL_NULL(m) other.m = VK_NULL_HANDLE;
+// Shallow copy + VK_NULL_HANDLE
+#define __DETAIL_MOVE_AND_NULL(m) this->m = other.m; other.m = VK_NULL_HANDLE;
+// Shallow copy + 0
+#define __DETAIL_MOVE_AND_ZERO(m) this->m = other.m; other.m = 0;
+// std::move for non-trivial types
+#define __DETAIL_MOVE(m) this->m = std::move(other.m);
+// Plain copy
+#define __DETAIL_COPY(m) this->m = other.m;
+// memcpy array + zero source
+#define __DETAIL_MEMCPY_AND_ZERO(m) std::memcpy(this->m, other.m, sizeof(m)); \
+                                    std::memset(other.m, 0, sizeof(other.m));
+// memcpy array (no zeroing)
+#define __DETAIL_MEMCPY(m) std::memcpy(this->m, other.m, sizeof(m));
+
+// FOR_EACH preprocessor engine (supports up to 32 args)
+// Helping in move ctor/assignment when having a lot of variables
+
+#define __PP_EXPAND(x) x
+
+#define __PP_CAT(a, b) __PP_CAT_IMPL(a, b)
+#define __PP_CAT_IMPL(a, b) a##b
+
+#define ___PP_ARG_32(_,                                                          \
+    _32,_31,_30,_29,_28,_27,_26,_25,_24,_23,_22,_21,_20,_19,_18,_17,_16,_15,_14, \
+    _13,_12,_11,_10,_9,_8,_7,_6,_5,_4,_3,_2,X_,...) X_
+
+#define __PP_HAS_COMMA(...) __PP_EXPAND(___PP_ARG_32(__VA_ARGS__, \
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 ,1,1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0))
+
+#define ___PP_TRIGGER_PARENTHESIS_(...) ,
+#define ___PP_PASTE5(_0, _1, _2, _3, _4) _0 ## _1 ## _2 ## _3 ## _4
+#define ___PP_IS_EMPTY_CASE_0001 ,
+#define ___PP_IS_EMPTY(_0, _1, _2, _3) __PP_HAS_COMMA(___PP_PASTE5(___PP_IS_EMPTY_CASE_, _0, _1, _2, _3))
+
+#define __PP_IS_EMPTY(...)                                           \
+___PP_IS_EMPTY(                                                      \
+__PP_HAS_COMMA(__VA_ARGS__),                                         \
+__PP_HAS_COMMA(___PP_TRIGGER_PARENTHESIS_ __VA_ARGS__),              \
+__PP_HAS_COMMA(__VA_ARGS__ (/* empty */)),                           \
+__PP_HAS_COMMA(___PP_TRIGGER_PARENTHESIS_ __VA_ARGS__ (/* empty */)) \
+)
+
+#define ___PP_VAR_COUNT_EMPTY_1(...) 0
+#define ___PP_VAR_COUNT_EMPTY_0(...) __PP_EXPAND(___PP_ARG_32(__VA_ARGS__,      \
+    32,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7, \
+    6,5,4,3,2,1))
+
+#define __PP_NARG(...) __PP_CAT(___PP_VAR_COUNT_EMPTY_, __PP_IS_EMPTY(__VA_ARGS__))(__VA_ARGS__)
+
+#define __PP_FOR_EACH(action, ...) \
+    __PP_FOR_EACH_( __PP_NARG(__VA_ARGS__), action, __VA_ARGS__)
+
+#define __PP_FOR_EACH_(N, action, ...) \
+    __PP_FOR_EACH_IMPL(N, action, __VA_ARGS__)
+
+#define __PP_FOR_EACH_IMPL(N, action, ...) \
+    __PP_CAT(__PP_FOR_EACH_, N)(action, __VA_ARGS__)
+
+#define __PP_FOR_EACH_1(action, a) action(a)
+#define __PP_FOR_EACH_2(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_1(action, __VA_ARGS__))
+#define __PP_FOR_EACH_3(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_2(action, __VA_ARGS__))
+#define __PP_FOR_EACH_4(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_3(action, __VA_ARGS__))
+#define __PP_FOR_EACH_5(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_4(action, __VA_ARGS__))
+#define __PP_FOR_EACH_6(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_5(action, __VA_ARGS__))
+#define __PP_FOR_EACH_7(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_6(action, __VA_ARGS__))
+#define __PP_FOR_EACH_8(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_7(action, __VA_ARGS__))
+#define __PP_FOR_EACH_9(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_8(action, __VA_ARGS__))
+#define __PP_FOR_EACH_10(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_9(action, __VA_ARGS__))
+#define __PP_FOR_EACH_11(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_10(action, __VA_ARGS__))
+#define __PP_FOR_EACH_12(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_11(action, __VA_ARGS__))
+#define __PP_FOR_EACH_13(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_12(action, __VA_ARGS__))
+#define __PP_FOR_EACH_14(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_13(action, __VA_ARGS__))
+#define __PP_FOR_EACH_15(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_14(action, __VA_ARGS__))
+#define __PP_FOR_EACH_16(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_15(action, __VA_ARGS__))
+#define __PP_FOR_EACH_17(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_16(action, __VA_ARGS__))
+#define __PP_FOR_EACH_18(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_17(action, __VA_ARGS__))
+#define __PP_FOR_EACH_19(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_18(action, __VA_ARGS__))
+#define __PP_FOR_EACH_20(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_19(action, __VA_ARGS__))
+#define __PP_FOR_EACH_21(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_20(action, __VA_ARGS__))
+#define __PP_FOR_EACH_22(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_21(action, __VA_ARGS__))
+#define __PP_FOR_EACH_23(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_22(action, __VA_ARGS__))
+#define __PP_FOR_EACH_24(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_23(action, __VA_ARGS__))
+#define __PP_FOR_EACH_25(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_24(action, __VA_ARGS__))
+#define __PP_FOR_EACH_26(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_25(action, __VA_ARGS__))
+#define __PP_FOR_EACH_27(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_26(action, __VA_ARGS__))
+#define __PP_FOR_EACH_28(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_27(action, __VA_ARGS__))
+#define __PP_FOR_EACH_29(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_28(action, __VA_ARGS__))
+#define __PP_FOR_EACH_30(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_29(action, __VA_ARGS__))
+#define __PP_FOR_EACH_31(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_30(action, __VA_ARGS__))
+#define __PP_FOR_EACH_32(action, a, ...) action(a) __PP_EXPAND(__PP_FOR_EACH_31(action, __VA_ARGS__))
+
+#define __NULL(...) __PP_FOR_EACH(__DETAIL_NULL, __VA_ARGS__)
+#define __MOVE_AND_NULL(...) __PP_FOR_EACH(__DETAIL_MOVE_AND_NULL, __VA_ARGS__)
+#define __MOVE_AND_ZERO(...) __PP_FOR_EACH(__DETAIL_MOVE_AND_ZERO, __VA_ARGS__)
+#define __MOVE(...) __PP_FOR_EACH(__DETAIL_MOVE, __VA_ARGS__)
+#define __COPY(...) __PP_FOR_EACH(__DETAIL_COPY, __VA_ARGS__)
+#define __MEMCPY_AND_ZERO(...) __PP_FOR_EACH(__DETAIL_MEMCPY_AND_ZERO, __VA_ARGS__)
+#define __MEMCPY(...) __PP_FOR_EACH(__DETAIL_MEMCPY, __VA_ARGS__)
 
 // =============================================================================
 //  Required headers
@@ -355,7 +460,23 @@ struct FeaturesRequested
 
 class SwapChain
 {
+public:
+    struct CreateInfo {
+        VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
+        VkColorSpaceKHR colorspace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+        int present_mode = VK_PRESENT_MODE_FIFO_KHR;
+    };
 
+public:
+    SwapChain(VkPhysicalDevice physical_device,
+              VkSurfaceKHR surface);
+    ~SwapChain();
+
+    PROSERPINE_NON_COPYABLE_MOVABLE(SwapChain);
+
+private:
+    VkPhysicalDevice _physical_device;
+    VkSurfaceKHR _surface;
 };
 
 // =============================================================================
@@ -369,8 +490,7 @@ public:
     TimelineSemaphore(VkDevice device, std::uint64_t initial_value = 0);
     ~TimelineSemaphore();
 
-    PROSERPINE_NON_COPYABLE(TimelineSemaphore);
-    PROSERPINE_MOVABLE(TimelineSemaphore);
+    PROSERPINE_NON_COPYABLE_MOVABLE(TimelineSemaphore);
 
     inline VkSemaphore handle() const { return this->_sema; }
     inline operator VkSemaphore() const { return this->_sema; }
@@ -462,8 +582,7 @@ public:
            const Buffer::CreateInfo& info);
     ~Buffer();
 
-    PROSERPINE_NON_COPYABLE(Buffer);
-    PROSERPINE_MOVABLE(Buffer);
+    PROSERPINE_NON_COPYABLE_MOVABLE(Buffer);
 
     inline VkBuffer handle() const { return this->_buffer; }
     inline VkDeviceMemory memory() const { return this->_memory; }
@@ -512,8 +631,7 @@ public:
           const Image::CreateInfo& info);
     ~Image();
 
-    PROSERPINE_NON_COPYABLE(Image);
-    PROSERPINE_MOVABLE(Image);
+    PROSERPINE_NON_COPYABLE_MOVABLE(Image);
 
     inline VkImage handle() const { return this->_image; }
     inline VkImageView view() const { return this->_view; }
@@ -550,8 +668,7 @@ public:
                          VkDeviceSize capacity = 64 * 1024 * 1024);
     ~StagingBufferManager();
 
-    PROSERPINE_NON_COPYABLE(StagingBufferManager);
-    PROSERPINE_MOVABLE(StagingBufferManager);
+    PROSERPINE_NON_COPYABLE_MOVABLE(StagingBufferManager);
 
     void upload_to_buffer(const void* data,
                           VkDeviceSize size,
@@ -613,8 +730,7 @@ public:
 
     ~DescriptorPool();
 
-    PROSERPINE_NON_COPYABLE(DescriptorPool);
-    PROSERPINE_MOVABLE(DescriptorPool);
+    PROSERPINE_NON_COPYABLE_MOVABLE(DescriptorPool);
 
     inline VkDescriptorPool pool() const { return this->_pool; }
 
@@ -636,8 +752,7 @@ class DescriptorSet
 public:
     ~DescriptorSet();
 
-    PROSERPINE_NON_COPYABLE(DescriptorSet);
-    PROSERPINE_MOVABLE(DescriptorSet);
+    PROSERPINE_NON_COPYABLE_MOVABLE(DescriptorSet);
 
     inline const VkDescriptorSet& handle() const { return this->_set; }
 
@@ -701,8 +816,7 @@ public:
 
     ~CommandProfiler();
 
-    PROSERPINE_NON_COPYABLE(CommandProfiler);
-    PROSERPINE_MOVABLE(CommandProfiler);
+    PROSERPINE_NON_COPYABLE_MOVABLE(CommandProfiler);
 
     void start(VkCommandBuffer cmd) noexcept;
 
@@ -767,8 +881,7 @@ public:
     ShaderModule();
     ~ShaderModule();
 
-    PROSERPINE_NON_COPYABLE(ShaderModule);
-    PROSERPINE_MOVABLE(ShaderModule);
+    PROSERPINE_NON_COPYABLE_MOVABLE(ShaderModule);
 
     static Expected<ShaderModule> create(VkDevice device,
                                          const std::vector<std::uint32_t>& spirv,
@@ -804,8 +917,7 @@ public:
     PipelineLayout();
     ~PipelineLayout();
 
-    PROSERPINE_NON_COPYABLE(PipelineLayout);
-    PROSERPINE_MOVABLE(PipelineLayout);
+    PROSERPINE_NON_COPYABLE_MOVABLE(PipelineLayout);
 
     inline VkPipelineLayout handle() const { return this->_layout; }
     inline operator VkPipelineLayout() const { return this->_layout; }
@@ -901,8 +1013,7 @@ public:
     GraphicsPipeline();
     ~GraphicsPipeline();
 
-    PROSERPINE_NON_COPYABLE(GraphicsPipeline);
-    PROSERPINE_MOVABLE(GraphicsPipeline);
+    PROSERPINE_NON_COPYABLE_MOVABLE(GraphicsPipeline);
 
     inline VkPipeline handle() const { return this->_pipeline; }
     inline operator VkPipeline() const { return this->_pipeline; }
@@ -928,8 +1039,7 @@ public:
     ComputePipeline();
     ~ComputePipeline();
 
-    PROSERPINE_NON_COPYABLE(ComputePipeline);
-    PROSERPINE_MOVABLE(ComputePipeline);
+    PROSERPINE_NON_COPYABLE_MOVABLE(ComputePipeline);
 
     inline VkPipeline handle() const { return this->_pipeline; }
     inline operator VkPipeline() const { return this->_pipeline; }
@@ -969,8 +1079,7 @@ public:
     explicit FencePool(VkDevice device);
     ~FencePool();
 
-    PROSERPINE_NON_COPYABLE(FencePool);
-    PROSERPINE_MOVABLE(FencePool);
+    PROSERPINE_NON_COPYABLE_MOVABLE(FencePool);
 
     VkFence acquire(bool signaled = false);
     void release(VkFence fence);
@@ -988,12 +1097,6 @@ private:
 class VulkanContext
 {
 public:
-    struct SwapChainInfo {
-        VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
-        VkColorSpaceKHR colorspace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-        int present_mode = VK_PRESENT_MODE_FIFO_KHR;
-    };
-
     struct CreateInfo {
         const char* application_name = "Vulkan App";
         const char* engine_name = "Proserpine";
@@ -1004,7 +1107,6 @@ public:
         DeviceFilter device_filter;
         FeaturesRequested features;
         DescriptorPool::CreateInfo descriptor_pool_info;
-        SwapChainInfo swapchain_info;
     };
 
     static Expected<VulkanContext> create(VulkanContext::CreateInfo& info);
@@ -1012,8 +1114,7 @@ public:
     VulkanContext() = default;
     ~VulkanContext();
 
-    PROSERPINE_NON_COPYABLE(VulkanContext);
-    PROSERPINE_MOVABLE(VulkanContext);
+    PROSERPINE_NON_COPYABLE_MOVABLE(VulkanContext);
 
     bool create_surface(std::function<bool(VkInstance, VkSurfaceKHR*)> create_callback);
 
@@ -1731,61 +1832,6 @@ inline VkResult VulkanContext::create_logical_device(const SelectedDevice& selec
         }
     }
 
-    // Create SwapChain
-    if(this->_surface != VK_NULL_HANDLE)
-    {
-        __LOG_TRACE("Creating logical device swapchain");
-
-        VkPhysicalDeviceSurfaceInfo2KHR surface_info{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR};
-        surface_info.pNext = nullptr;
-        surface_info.surface = this->_surface;
-
-        VkSurfaceCapabilities2KHR capabilities{VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR};
-        vkGetPhysicalDeviceSurfaceCapabilities2KHR(this->_physical_device,
-                                                   &surface_info,
-                                                   &capabilities);
-
-        std::vector<VkSurfaceFormat2KHR> formats;
-        std::uint32_t formats_count;
-
-        vkGetPhysicalDeviceSurfaceFormats2KHR(this->_physical_device,
-                                              &surface_info,
-                                              &formats_count,
-                                              nullptr);
-
-        if(formats_count == 0)
-        {
-            __LOG_ERROR("Could not find any format for swapchain");
-            return VK_ERROR_UNKNOWN;
-        }
-
-        formats.resize(static_cast<std::size_t>(formats_count));
-        vkGetPhysicalDeviceSurfaceFormats2KHR(this->_physical_device,
-                                                &surface_info,
-                                                &formats_count,
-                                                formats.data());
-
-        std::vector<VkPresentModeKHR> present_modes;
-        std::uint32_t present_modes_count;
-
-        vkGetPhysicalDeviceSurfacePresentModesKHR(this->_physical_device,
-                                                  this->_surface,
-                                                  &present_modes_count,
-                                                  nullptr);
-
-        if(present_modes_count == 0)
-        {
-            __LOG_ERROR("Could not find any present mode for swapchain");
-            return VK_ERROR_UNKNOWN;
-        }
-
-        present_modes.resize(static_cast<std::size_t>(present_modes_count));
-        vkGetPhysicalDeviceSurfacePresentModesKHR(this->_physical_device,
-                                                    this->_surface,
-                                                    &present_modes_count,
-                                                    present_modes.data());
-    }
-
     __LOG_TRACE("New logical device created successfully");
 
     return VK_SUCCESS;
@@ -1852,45 +1898,45 @@ inline Expected<VulkanContext> VulkanContext::create(VulkanContext::CreateInfo& 
 
 inline void VulkanContext::destroy()
 {
-    __LOG_TRACE("VulkanContext: Destroying");
-
-    if(this->_device != VK_NULL_HANDLE)
-    {
-        vkDeviceWaitIdle(this->_device);
-
-        this->_staging.reset();
-        this->_timeline_callbacks.reset();
-        this->_fence_pool.reset();
-        this->_descriptor_pool.reset();
-        this->_command_profiler.reset();
-
-        for(auto& context : this->_immediate_contexts)
-        {
-            if(context.cmd != VK_NULL_HANDLE)
-            {
-                vkFreeCommandBuffers(this->_device, context.pool, 1, &context.cmd);
-                context.cmd = VK_NULL_HANDLE;
-            }
-
-            if(context.pool != VK_NULL_HANDLE)
-            {
-                vkDestroyCommandPool(this->_device, context.pool, nullptr);
-                context.pool = VK_NULL_HANDLE;
-            }
-
-            if(context.fence != VK_NULL_HANDLE)
-            {
-                vkDestroyFence(this->_device, context.fence, nullptr);
-                context.fence = VK_NULL_HANDLE;
-            }
-        }
-
-        vkDestroyDevice(this->_device, nullptr);
-        this->_device = VK_NULL_HANDLE;
-    }
-
     if(this->_instance != VK_NULL_HANDLE)
     {
+        __LOG_TRACE("VulkanContext: Destroying");
+
+        if(this->_device != VK_NULL_HANDLE)
+        {
+            vkDeviceWaitIdle(this->_device);
+
+            this->_staging.reset();
+            this->_timeline_callbacks.reset();
+            this->_fence_pool.reset();
+            this->_descriptor_pool.reset();
+            this->_command_profiler.reset();
+
+            for(auto& context : this->_immediate_contexts)
+            {
+                if(context.cmd != VK_NULL_HANDLE)
+                {
+                    vkFreeCommandBuffers(this->_device, context.pool, 1, &context.cmd);
+                    context.cmd = VK_NULL_HANDLE;
+                }
+
+                if(context.pool != VK_NULL_HANDLE)
+                {
+                    vkDestroyCommandPool(this->_device, context.pool, nullptr);
+                    context.pool = VK_NULL_HANDLE;
+                }
+
+                if(context.fence != VK_NULL_HANDLE)
+                {
+                    vkDestroyFence(this->_device, context.fence, nullptr);
+                    context.fence = VK_NULL_HANDLE;
+                }
+            }
+
+            vkDestroyDevice(this->_device, nullptr);
+            this->_device = VK_NULL_HANDLE;
+        }
+
         if(this->_surface != VK_NULL_HANDLE)
         {
             vkDestroySurfaceKHR(this->_instance, this->_surface, nullptr);
@@ -1914,33 +1960,11 @@ inline void VulkanContext::destroy()
 
 inline VulkanContext::~VulkanContext() { this->destroy(); }
 
-inline VulkanContext::VulkanContext(VulkanContext&& other) noexcept : _instance(other._instance),
-                                                                      _debug_messenger(other._debug_messenger),
-                                                                      _physical_device(other._physical_device),
-                                                                      _device(other._device),
-                                                                      _surface(other._surface),
-                                                                      _device_properties(std::move(other._device_properties)),
-                                                                      _selected_device(std::move(other._selected_device)),
-                                                                      _enabled_device_extensions(std::move(other._enabled_device_extensions)),
-                                                                      _staging(std::move(other._staging)),
-                                                                      _timeline_callbacks(std::move(other._timeline_callbacks)),
-                                                                      _renderdoc(std::move(other._renderdoc)),
-                                                                      _fence_pool(std::move(other._fence_pool)),
-                                                                      _descriptor_pool(std::move(other._descriptor_pool)),
-                                                                      _command_profiler(std::move(other._command_profiler)),
-                                                                      _validation_enabled(other._validation_enabled)
+inline VulkanContext::VulkanContext(VulkanContext&& other) noexcept
 {
-    std::memcpy(this->_queues, other._queues, sizeof(_queues));
-    std::memcpy(this->_immediate_contexts, other._immediate_contexts, sizeof(_immediate_contexts));
-    std::memcpy(this->_feature_flags, other._feature_flags, sizeof(_feature_flags));
-
-    other._instance = VK_NULL_HANDLE;
-    other._debug_messenger = VK_NULL_HANDLE;
-    other._physical_device = VK_NULL_HANDLE;
-    other._device = VK_NULL_HANDLE;
-    other._surface = VK_NULL_HANDLE;
-    std::memset(other._queues, 0, sizeof(other._queues));
-    std::memset(other._immediate_contexts, 0, sizeof(other._immediate_contexts));
+    __MOVE_AND_NULL(_instance, _debug_messenger, _physical_device, _device, _surface);
+    __MOVE(_device_properties, _selected_device, _enabled_device_extensions, _staging, _timeline_callbacks, _renderdoc, _fence_pool, _descriptor_pool, _command_profiler, _validation_enabled);
+    __MEMCPY_AND_ZERO(_queues, _immediate_contexts, _feature_flags);
 }
 
 inline VulkanContext& VulkanContext::operator=(VulkanContext&& other) noexcept
@@ -1949,34 +1973,9 @@ inline VulkanContext& VulkanContext::operator=(VulkanContext&& other) noexcept
     {
         this->destroy();
 
-        this->_instance = other._instance;
-        this->_debug_messenger = other._debug_messenger;
-        this->_physical_device = other._physical_device;
-        this->_device = other._device;
-        this->_surface = other._surface;
-        this->_device_properties = std::move(other._device_properties);
-        this->_selected_device = std::move(other._selected_device);
-        this->_enabled_device_extensions = std::move(other._enabled_device_extensions);
-        this->_staging = std::move(other._staging);
-        this->_timeline_callbacks = std::move(other._timeline_callbacks);
-        this->_renderdoc = std::move(other._renderdoc);
-        this->_fence_pool = std::move(other._fence_pool);
-        this->_descriptor_pool = std::move(other._descriptor_pool);
-        this->_command_profiler = std::move(other._command_profiler);
-        this->_validation_enabled = other._validation_enabled;
-
-        std::memcpy(this->_queues, other._queues, sizeof(_queues));
-        std::memcpy(this->_immediate_contexts, other._immediate_contexts, sizeof(_immediate_contexts));
-        std::memcpy(this->_feature_flags, other._feature_flags, sizeof(_feature_flags));
-
-        other._instance = VK_NULL_HANDLE;
-        other._debug_messenger = VK_NULL_HANDLE;
-        other._physical_device = VK_NULL_HANDLE;
-        other._device = VK_NULL_HANDLE;
-        other._surface = VK_NULL_HANDLE;
-
-        std::memset(other._queues, 0, sizeof(other._queues));
-        std::memset(other._immediate_contexts, 0, sizeof(other._immediate_contexts));
+        __MOVE_AND_NULL(_instance, _debug_messenger, _physical_device, _device, _surface);
+        __MOVE(_device_properties, _selected_device, _enabled_device_extensions, _staging, _timeline_callbacks, _renderdoc, _fence_pool, _descriptor_pool, _command_profiler, _validation_enabled);
+        __MEMCPY_AND_ZERO(_queues, _immediate_contexts, _feature_flags);
     }
 
     return *this;
@@ -2012,7 +2011,7 @@ inline VkQueue VulkanContext::queue(QueueType type,
 inline std::uint32_t VulkanContext::queue_family(QueueType type) const
 {
     std::size_t i = static_cast<std::size_t>(type);
-    PROSERPINE_ASSERT(this->_queues[i].valid, "Queue is invalid", VK_NULL_HANDLE);
+    PROSERPINE_ASSERT(this->_queues[i].valid, "Queue is invalid", PROSERPINE_INVALID_QUEUE_INDEX);
     return this->_queues[i].family;
 }
 
@@ -2187,6 +2186,91 @@ inline Expected<DescriptorSet> VulkanContext::allocate_descriptor_set(VkDescript
 }
 
 // ============================================================================
+//  SwapChain implementation
+// ============================================================================
+
+inline SwapChain::SwapChain(VkPhysicalDevice physical_device,
+                            VkSurfaceKHR surface) : _physical_device(physical_device),
+                                                    _surface(surface)
+{
+    __LOG_TRACE("SwapChain: Initializing");
+
+    if(this->_surface == VK_NULL_HANDLE)
+        return;
+
+    VkPhysicalDeviceSurfaceInfo2KHR surface_info{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR};
+    surface_info.pNext = nullptr;
+    surface_info.surface = this->_surface;
+
+    VkSurfaceCapabilities2KHR capabilities{VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR};
+    vkGetPhysicalDeviceSurfaceCapabilities2KHR(this->_physical_device,
+                                                &surface_info,
+                                                &capabilities);
+
+    std::vector<VkSurfaceFormat2KHR> formats;
+    std::uint32_t formats_count;
+
+    vkGetPhysicalDeviceSurfaceFormats2KHR(this->_physical_device,
+                                            &surface_info,
+                                            &formats_count,
+                                            nullptr);
+
+    if(formats_count == 0)
+    {
+        __LOG_ERROR("SwapChain: Could not find any available format");
+        return;
+    }
+
+    formats.resize(static_cast<std::size_t>(formats_count));
+    vkGetPhysicalDeviceSurfaceFormats2KHR(this->_physical_device,
+                                            &surface_info,
+                                            &formats_count,
+                                            formats.data());
+
+    std::vector<VkPresentModeKHR> present_modes;
+    std::uint32_t present_modes_count;
+
+    vkGetPhysicalDeviceSurfacePresentModesKHR(this->_physical_device,
+                                                this->_surface,
+                                                &present_modes_count,
+                                                nullptr);
+
+    if(present_modes_count == 0)
+    {
+        __LOG_ERROR("SwapChain: Could not find any available present mode");
+        return;
+    }
+
+    present_modes.resize(static_cast<std::size_t>(present_modes_count));
+    vkGetPhysicalDeviceSurfacePresentModesKHR(this->_physical_device,
+                                              this->_surface,
+                                              &present_modes_count,
+                                              present_modes.data());
+
+    __LOG_TRACE("SwapChain: Initialized");
+}
+
+inline SwapChain::~SwapChain()
+{
+
+}
+
+inline SwapChain::SwapChain(SwapChain&& other) noexcept
+{
+    __MOVE_AND_NULL(_physical_device, _surface);
+}
+
+inline SwapChain& SwapChain::operator=(SwapChain&& other) noexcept
+{
+    if(this != &other)
+    {
+        __MOVE_AND_NULL(_physical_device, _surface);
+    }
+
+    return *this;
+}
+
+// ============================================================================
 //  TimelineSemaphore implementation
 // ============================================================================
 
@@ -2216,11 +2300,9 @@ inline TimelineSemaphore::~TimelineSemaphore()
     }
 }
 
-inline TimelineSemaphore::TimelineSemaphore(TimelineSemaphore&& other) noexcept : _device(other._device),
-                                                                                  _sema(other._sema)
+inline TimelineSemaphore::TimelineSemaphore(TimelineSemaphore&& other) noexcept
 {
-    other._device    = VK_NULL_HANDLE;
-    other._sema = VK_NULL_HANDLE;
+    __MOVE_AND_NULL(_device, _sema);
 }
 
 inline TimelineSemaphore& TimelineSemaphore::operator=(TimelineSemaphore&& other) noexcept
@@ -2230,11 +2312,7 @@ inline TimelineSemaphore& TimelineSemaphore::operator=(TimelineSemaphore&& other
         if(this->_sema != VK_NULL_HANDLE && this->_device != VK_NULL_HANDLE)
             vkDestroySemaphore(_device, _sema, nullptr);
 
-        this->_device = other._device;
-        this->_sema = other._sema;
-
-        other._device = VK_NULL_HANDLE;
-        other._sema = VK_NULL_HANDLE;
+        __MOVE_AND_NULL(_device, _sema);
     }
 
     return *this;
@@ -2567,19 +2645,10 @@ inline Buffer::~Buffer()
     }
 }
 
-inline Buffer::Buffer(Buffer&& other) noexcept : _device(other._device),
-                                                 _buffer(other._buffer),
-                                                 _memory(other._memory),
-                                                 _size(other._size),
-                                                 _device_address(other._device_address),
-                                                 _mapped(other._mapped)
+inline Buffer::Buffer(Buffer&& other) noexcept
 {
-    other._device = VK_NULL_HANDLE;
-    other._buffer = VK_NULL_HANDLE;
-    other._memory = VK_NULL_HANDLE;
-    other._mapped = nullptr;
-    other._size = 0;
-    other._device_address = 0;
+    __MOVE_AND_NULL(_device, _buffer, _memory, _mapped);
+    __MOVE_AND_ZERO(_size, _device_address);
 }
 
 inline Buffer& Buffer::operator=(Buffer&& other) noexcept
@@ -2598,19 +2667,8 @@ inline Buffer& Buffer::operator=(Buffer&& other) noexcept
                 vkFreeMemory(_device, _memory, nullptr);
         }
 
-        this->_device = other._device;
-        this->_buffer = other._buffer;
-        this->_memory = other._memory;
-        this->_size = other._size;
-        this->_device_address = other._device_address;
-        this->_mapped = other._mapped;
-
-        other._device = VK_NULL_HANDLE;
-        other._buffer = VK_NULL_HANDLE;
-        other._memory = VK_NULL_HANDLE;
-        other._mapped = nullptr;
-        other._size = 0;
-        other._device_address = 0;
+        __MOVE_AND_NULL(_device, _buffer, _memory, _mapped);
+        __MOVE_AND_ZERO(_size, _device_address);
     }
 
     return *this;
@@ -2704,17 +2762,10 @@ inline Image::~Image()
     }
 }
 
-inline Image::Image(Image&& other) noexcept : _device(other._device),
-                                              _image(other._image),
-                                              _view(other._view),
-                                              _memory(other._memory),
-                                              _format(other._format),
-                                              _extent(other._extent)
+inline Image::Image(Image&& other) noexcept
 {
-    other._device = VK_NULL_HANDLE;
-    other._image = VK_NULL_HANDLE;
-    other._view = VK_NULL_HANDLE;
-    other._memory = VK_NULL_HANDLE;
+    __MOVE_AND_NULL(_device, _image, _view, _memory);
+    __MOVE(_format, _extent);
 }
 
 inline Image& Image::operator=(Image&& other) noexcept
@@ -2733,17 +2784,8 @@ inline Image& Image::operator=(Image&& other) noexcept
                 vkFreeMemory(this->_device, this->_memory, nullptr);
         }
 
-        this->_device = other._device;
-        this->_image = other._image;
-        this->_view = other._view;
-        this->_memory = other._memory;
-        this->_format = other._format;
-        this->_extent = other._extent;
-
-        other._device = VK_NULL_HANDLE;
-        other._image = VK_NULL_HANDLE;
-        other._view = VK_NULL_HANDLE;
-        other._memory = VK_NULL_HANDLE;
+        __MOVE_AND_NULL(_device, _image, _view, _memory);
+        __MOVE(_format, _extent);
     }
 
     return *this;
@@ -2828,50 +2870,18 @@ inline StagingBufferManager::~StagingBufferManager()
     }
 }
 
-inline StagingBufferManager::StagingBufferManager(StagingBufferManager&& other) noexcept : _device(other._device),
-                                                                                           _physical_device(other._physical_device),
-                                                                                           _transfer_queue(other._transfer_queue),
-                                                                                           _transfer_family(other._transfer_family),
-                                                                                           _staging_buffer(other._staging_buffer),
-                                                                                           _staging_memory(other._staging_memory),
-                                                                                           _staging_mapped(other._staging_mapped),
-                                                                                           _capacity(other._capacity),
-                                                                                           _used(other._used),
-                                                                                           _command_pool(other._command_pool),
-                                                                                           _fence(other._fence),
-                                                                                           _pending(std::move(other._pending))
+inline StagingBufferManager::StagingBufferManager(StagingBufferManager&& other) noexcept
 {
-    other._device = VK_NULL_HANDLE;
-    other._staging_buffer = VK_NULL_HANDLE;
-    other._staging_memory = VK_NULL_HANDLE;
-    other._staging_mapped = nullptr;
-    other._command_pool = VK_NULL_HANDLE;
-    other._fence = VK_NULL_HANDLE;
+    __MOVE_AND_NULL(_device, _physical_device, _staging_buffer, _staging_memory, _staging_mapped, _command_pool, _fence);
+    __MOVE(_transfer_queue, _transfer_family, _capacity, _used, _pending);
 }
 
 inline StagingBufferManager& StagingBufferManager::operator=(StagingBufferManager&& other) noexcept
 {
     if(this != &other)
     {
-        this->_device = other._device;
-        this->_physical_device = other._physical_device;
-        this->_transfer_queue = other._transfer_queue;
-        this->_transfer_family = other._transfer_family;
-        this->_staging_buffer = other._staging_buffer;
-        this->_staging_memory = other._staging_memory;
-        this->_staging_mapped = other._staging_mapped;
-        this->_capacity = other._capacity;
-        this->_used = other._used;
-        this->_command_pool = other._command_pool;
-        this->_fence = other._fence;
-        this->_pending = std::move(other._pending);
-
-        other._device = VK_NULL_HANDLE;
-        other._staging_buffer = VK_NULL_HANDLE;
-        other._staging_memory = VK_NULL_HANDLE;
-        other._staging_mapped = nullptr;
-        other._command_pool = VK_NULL_HANDLE;
-        other._fence = VK_NULL_HANDLE;
+        __MOVE_AND_NULL(_device, _physical_device, _staging_buffer, _staging_memory, _staging_mapped, _command_pool, _fence);
+        __MOVE(_transfer_queue, _transfer_family, _capacity, _used, _pending);
     }
 
     return *this;
@@ -3087,22 +3097,16 @@ inline DescriptorPool::~DescriptorPool()
     }
 }
 
-inline DescriptorPool::DescriptorPool(DescriptorPool&& other) noexcept : _device(other._device),
-                                                                         _pool(other._pool)
+inline DescriptorPool::DescriptorPool(DescriptorPool&& other) noexcept
 {
-    other._device = VK_NULL_HANDLE;
-    other._pool = VK_NULL_HANDLE;
+    __MOVE_AND_NULL(_device, _pool);
 }
 
 inline DescriptorPool& DescriptorPool::operator=(DescriptorPool&& other) noexcept
 {
     if(this != &other)
     {
-        this->_device = other._device;
-        this->_pool = other._pool;
-
-        other._device = VK_NULL_HANDLE;
-        other._pool = VK_NULL_HANDLE;
+        __MOVE_AND_NULL(_device, _pool);
     }
 
     return *this;
@@ -3136,13 +3140,10 @@ inline Expected<DescriptorSet> DescriptorPool::allocate_descriptor_set(VkDescrip
 //  Descriptor Set implementation
 // =============================================================================
 
-inline DescriptorSet::DescriptorSet(DescriptorSet&& other) noexcept : _device(other._device),
-                                                                      _set(other._set),
-                                                                      _writes(std::move(other._writes)),
-                                                                      _buffer_infos(std::move(other._buffer_infos))
+inline DescriptorSet::DescriptorSet(DescriptorSet&& other) noexcept
 {
-    other._device = VK_NULL_HANDLE;
-    other._set = VK_NULL_HANDLE;
+    __MOVE_AND_NULL(_device, _set);
+    __MOVE(_writes, _buffer_infos);
 }
 
 inline DescriptorSet::~DescriptorSet()
@@ -3153,13 +3154,8 @@ inline DescriptorSet& DescriptorSet::operator=(DescriptorSet&& other) noexcept
 {
     if(this != &other)
     {
-        this->_device = other._device;
-        this->_set = other._set;
-        this->_writes = std::move(other._writes);
-        this->_buffer_infos = std::move(other._buffer_infos);
-
-        other._device = VK_NULL_HANDLE;
-        other._set = VK_NULL_HANDLE;
+        __MOVE_AND_NULL(_device, _set);
+        __MOVE(_writes, _buffer_infos);
     }
 
     return *this;
@@ -3255,22 +3251,16 @@ inline CommandProfiler::CommandProfiler(VkDevice device, VkPhysicalDevice physic
                 this->_timestamp_period);
 }
 
-inline CommandProfiler::CommandProfiler(CommandProfiler&& other) noexcept : _device(other._device),
-                                                                            _pool(other._pool)
+inline CommandProfiler::CommandProfiler(CommandProfiler&& other) noexcept
 {
-    other._device = VK_NULL_HANDLE;
-    other._pool = VK_NULL_HANDLE;
+    __MOVE_AND_NULL(_device, _pool);
 }
 
 inline CommandProfiler& CommandProfiler::operator=(CommandProfiler&& other) noexcept
 {
     if(this != &other)
     {
-        this->_device = other._device;
-        this->_pool = other._pool;
-
-        other._device = VK_NULL_HANDLE;
-        other._pool = VK_NULL_HANDLE;
+        __MOVE_AND_NULL(_device, _pool);
     }
 
     return *this;
@@ -3416,15 +3406,10 @@ inline ShaderModule::~ShaderModule()
     }
 }
 
-inline ShaderModule::ShaderModule(ShaderModule&& other) noexcept : _device(other._device),
-                                                            _module(other._module),
-                                                            _stage(other._stage),
-                                                            _set_layouts(std::move(other._set_layouts)),
-                                                            _push_ranges(std::move(other._push_ranges)),
-                                                            _vertex_inputs(std::move(other._vertex_inputs))
+inline ShaderModule::ShaderModule(ShaderModule&& other) noexcept : _stage(other._stage)
 {
-    other._device = VK_NULL_HANDLE;
-    other._module = VK_NULL_HANDLE;
+    __MOVE_AND_NULL(_device, _module);
+    __MOVE(_set_layouts, _push_ranges, _vertex_inputs);
 }
 
 inline ShaderModule& ShaderModule::operator=(ShaderModule&& other) noexcept
@@ -3432,17 +3417,12 @@ inline ShaderModule& ShaderModule::operator=(ShaderModule&& other) noexcept
     if(this != &other)
     {
         if(this->_module != VK_NULL_HANDLE && this->_device != VK_NULL_HANDLE)
-            vkDestroyShaderModule(this->_device, _module, nullptr);
+            vkDestroyShaderModule(this->_device, this->_module, nullptr);
 
-        this->_device = other._device;
-        this->_module = other._module;
+        __MOVE_AND_NULL(_device, _module);
+        __MOVE(_set_layouts, _push_ranges, _vertex_inputs);
+
         this->_stage = other._stage;
-        this->_set_layouts    = std::move(other._set_layouts);
-        this->_push_ranges    = std::move(other._push_ranges);
-        this->_vertex_inputs  = std::move(other._vertex_inputs);
-
-        other._device = VK_NULL_HANDLE;
-        other._module = VK_NULL_HANDLE;
     }
 
     return *this;
@@ -3929,12 +3909,10 @@ inline PipelineLayout::~PipelineLayout()
     }
 }
 
-inline PipelineLayout::PipelineLayout(PipelineLayout&& other) noexcept : _device(other._device),
-                                                                         _layout(other._layout),
-                                                                         _set_layouts(std::move(other._set_layouts))
+inline PipelineLayout::PipelineLayout(PipelineLayout&& other) noexcept
 {
-    other._device = VK_NULL_HANDLE;
-    other._layout = VK_NULL_HANDLE;
+    __MOVE_AND_NULL(_device, _layout);
+    __MOVE(_set_layouts);
 }
 
 inline PipelineLayout& PipelineLayout::operator=(PipelineLayout&& other) noexcept
@@ -3951,12 +3929,8 @@ inline PipelineLayout& PipelineLayout::operator=(PipelineLayout&& other) noexcep
                     vkDestroyDescriptorSetLayout(this->_device, sl, nullptr);
         }
 
-        this->_device = other._device;
-        this->_layout = other._layout;
-        this->_set_layouts = std::move(other._set_layouts);
-
-        other._device = VK_NULL_HANDLE;
-        other._layout = VK_NULL_HANDLE;
+        __MOVE_AND_NULL(_device, _layout);
+        __MOVE(_set_layouts);
     }
 
     return *this;
@@ -4105,11 +4079,9 @@ inline GraphicsPipeline::~GraphicsPipeline()
         vkDestroyPipeline(this->_device, this->_pipeline, nullptr);
 }
 
-inline GraphicsPipeline::GraphicsPipeline(GraphicsPipeline&& other) noexcept : _device(other._device),
-                                                                               _pipeline(other._pipeline)
+inline GraphicsPipeline::GraphicsPipeline(GraphicsPipeline&& other) noexcept
 {
-    other._device = VK_NULL_HANDLE;
-    other._pipeline = VK_NULL_HANDLE;
+    __MOVE_AND_NULL(_device, _pipeline);
 }
 
 inline GraphicsPipeline& GraphicsPipeline::operator=(GraphicsPipeline&& other) noexcept
@@ -4119,11 +4091,7 @@ inline GraphicsPipeline& GraphicsPipeline::operator=(GraphicsPipeline&& other) n
         if(this->_pipeline != VK_NULL_HANDLE && this->_device != VK_NULL_HANDLE)
             vkDestroyPipeline(this->_device, this->_pipeline, nullptr);
 
-        this->_device = other._device;
-        this->_pipeline = other._pipeline;
-
-        other._device = VK_NULL_HANDLE;
-        other._pipeline = VK_NULL_HANDLE;
+        __MOVE_AND_NULL(_device, _pipeline);
     }
 
     return *this;
@@ -4223,22 +4191,18 @@ inline FencePool::~FencePool()
         vkDestroyFence(this->_device, f, nullptr);
 }
 
-inline FencePool::FencePool(FencePool&& other) noexcept : _device(other._device),
-                                                          _free(std::move(other._free)),
-                                                          _all(std::move(other._all))
+inline FencePool::FencePool(FencePool&& other) noexcept
 {
-    other._device = VK_NULL_HANDLE;
+    __MOVE_AND_NULL(_device);
+    __MOVE(_free, _all);
 }
 
 inline FencePool& FencePool::operator=(FencePool&& other) noexcept
 {
     if(this != &other)
     {
-        this->_device = other._device;
-        this->_free = std::move(other._free);
-        this->_all = std::move(other._all);
-
-        other._device = VK_NULL_HANDLE;
+        __MOVE_AND_NULL(_device);
+        __MOVE(_free, _all);
     }
 
     return *this;
@@ -4288,22 +4252,5 @@ inline void FencePool::release(VkFence fence)
 } // namespace proserpine
 
 #endif // PROSERPINE_IMPLEMENTATION
-
-#undef __FMT_STR
-#undef __FMT_WSTR
-#undef __FMT_U32
-#undef __FMT_I32
-#undef __FMT_U64
-#undef __FMT_U64H
-#undef __FMT_I64
-#undef __FMT_BOOL
-#undef __FMT_FLT32
-#undef __FMT_FLT64
-
-#undef __LOG_ERROR
-#undef __LOG_WARN
-#undef __LOG_INFO
-#undef __LOG_DEBUG
-#undef __LOG_TRACE
 
 #endif // !defined(__PROSERPINE)
