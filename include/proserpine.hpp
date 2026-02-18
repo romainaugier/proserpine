@@ -313,6 +313,7 @@ class TimelineSemaphore;
 class TimelineCallbackSystem;
 class RenderDocIntegration;
 class StagingBufferManager;
+template<std::size_t N> class FrameManager;
 class DescriptorPool;
 class DescriptorSet;
 class CommandPool;
@@ -1109,6 +1110,72 @@ private:
 };
 
 // =============================================================================
+//  FrameManager
+// =============================================================================
+
+template<std::size_t N = 2>
+class FrameManager
+{
+    friend class VulkanContext;
+
+public:
+    FrameManager() = default;
+    ~FrameManager() = default;
+
+    FrameManager(FrameManager<N>&& other) noexcept
+    {
+        __MOVE(_frames, _current_frame);
+    }
+
+    FrameManager& operator=(FrameManager<N>&& other) noexcept
+    {
+        __MOVE(_frames, _current_frame);
+    }
+
+    struct FrameContext
+    {
+        CommandBuffer* command_buffer;
+        VkSemaphore image_available_semaphore;
+        std::uint32_t frame_index;
+    };
+
+    inline FrameContext begin_frame()
+    {
+        FrameData& frame = this->_frames[this->_current_frame];
+
+        frame.in_flight_fence.wait();
+        frame.in_flight_fence.reset();
+
+        frame.command_pool.reset();
+        frame.command_buffer.reset();
+
+        return FrameContext{
+            &frame.command_buffer,
+            frame.image_available_semaphore.handle(),
+            this->_current_frame
+        };
+    }
+
+    inline void end_frame() { this->_current_frame = (this->_current_frame + 1) % N; }
+
+    VkFence current_fence() const { return this->_frames[this->_current_frame].in_flight_fence.handle(); }
+    std::uint32_t current_frame_index() const { return this->_current_frame; }
+    std::uint32_t frames_in_flight() const { return N; }
+
+private:
+    struct FrameData
+    {
+        CommandPool command_pool;
+        CommandBuffer command_buffer;
+        Fence in_flight_fence;
+        Semaphore image_available_semaphore;
+    };
+
+    std::array<FrameData, N> _frames;
+    std::uint32_t _current_frame = 0;
+};
+
+// =============================================================================
 //  Shader introspection types
 // =============================================================================
 
@@ -1435,6 +1502,40 @@ public:
     Expected<TimelineSemaphore> create_timeline_semaphore(std::uint64_t initial_value = 0);
     Expected<Semaphore> create_semaphore();
     Expected<Fence> create_fence(bool signaled = false);
+
+    // Returns a new FrameManager with N frames in flight
+    template<std::size_t N = 2>
+    Expected<FrameManager<N>> create_frame_manager()
+    {
+
+        FrameManager<N> fm;
+
+        for(auto& frame : fm._frames)
+        {
+            auto command_pool = this->create_command_pool(QueueType::Graphics);
+            if(!command_pool)
+                return command_pool.error();
+
+            frame.command_pool = command_pool.value();
+            frame.command_buffer = frame.command_pool.allocate();
+
+            auto fence = this->create_fence(true);
+
+            if(!fence)
+                return fence.error();
+
+            frame.in_flight_fence = fence.value();
+
+            auto semaphore = this->create_semaphore();
+
+            if(!semaphore)
+                return semaphore.error();
+
+            frame.image_available_semaphore = semaphore.value();
+        }
+
+        return fm;
+    }
 
     // Returns a new CommandPool
     Expected<SwapChain> create_swapchain(SwapChain::CreateInfo& create_info);
