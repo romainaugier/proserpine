@@ -264,7 +264,9 @@ __PP_HAS_COMMA(___PP_TRIGGER_PARENTHESIS_ __VA_ARGS__ (/* empty */)) \
 #endif // defined(PROSERPINE_INCLUDE_VULKAN)
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <bitset>
 #include <condition_variable>
 #include <cstring>
 #include <cstdio>
@@ -304,13 +306,17 @@ namespace proserpine {
 class VulkanContext;
 class Buffer;
 class Image;
+class Fence;
 class SwapChain;
+class Semaphore;
 class TimelineSemaphore;
 class TimelineCallbackSystem;
 class RenderDocIntegration;
 class StagingBufferManager;
 class DescriptorPool;
 class DescriptorSet;
+class CommandPool;
+class CommandBuffer;
 class CommandProfiler;
 class ShaderModule;
 class PipelineLayout;
@@ -344,9 +350,11 @@ public:
 
     bool has_error() const { return std::holds_alternative<Error>(this->_data); }
 
-    inline T&& value() { return std::move(std::get<T>(this->_data)); }
+    inline T value() { return std::move(std::get<T>(this->_data)); }
 
-    inline T&& value_or(std::function<void(const Error&)> lbd)
+    inline const T& value() const { return std::get<T>(this->_data); }
+
+    inline T value_or(std::function<void(const Error&)> lbd)
     {
         if(this->has_error())
             lbd(this->error());
@@ -398,6 +406,7 @@ struct DeviceProperties
     VkPhysicalDeviceVulkan11Features features_11{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
     VkPhysicalDeviceVulkan12Features features_12{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
     VkPhysicalDeviceVulkan13Features features_13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+    VkPhysicalDeviceVulkan14Features features_14{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES };
     VkPhysicalDeviceMemoryProperties memory_properties{};
     std::vector<VkQueueFamilyProperties> queue_families;
     std::vector<VkExtensionProperties> available_extensions;
@@ -417,7 +426,7 @@ struct SelectedDevice
 
 struct DeviceFilter
 {
-    std::uint32_t min_api_version = VK_API_VERSION_1_3;
+    std::uint32_t min_api_version = VK_API_VERSION_1_4;
 
     bool require_separate_compute_queue  = false;
     bool require_separate_transfer_queue = false;
@@ -478,9 +487,44 @@ public:
 
     PROSERPINE_NON_COPYABLE_MOVABLE(SwapChain);
 
+    VkResult acquire_next_image(VkSemaphore signal_semaphore,
+                                VkFence signal_fence,
+                                std::uint32_t* image_index)
+    {
+        VkAcquireNextImageInfoKHR info{VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR};
+        info.pNext = nullptr;
+        info.semaphore = signal_semaphore;
+        info.fence = signal_fence;
+        info.swapchain = this->_swapchain;
+        info.timeout = PROSERPINE_WAIT_INFINITE;
+
+        // Modify if multi-gpu usage, for now we just reference the first attached GPU
+        info.deviceMask = 1;
+
+        return vkAcquireNextImage2KHR(this->_device, &info, image_index);
+    }
+
+    inline VkImageView image_view(std::uint32_t index) { return this->_views[index]; }
+    inline VkImage image(std::uint32_t index) { return this->_images[index]; }
+    inline std::size_t image_count() const { return this->_images.size(); }
+
+    inline bool image_first_use(std::uint32_t index) const { return this->_first_use[index]; }
+    inline void image_first_use_set(std::uint32_t index) { this->_first_use[index] = 0; }
+
+    inline VkSemaphore image_rendered_semaphore(std::uint32_t index) const { return this->_image_rendered_semaphores[index]; }
+
+    const VkExtent2D& extent() const { return this->_extent; }
+
+    VkFormat format() const { return this->_format; }
+
+    inline const VkSwapchainKHR& handle() const { return this->_swapchain; }
+
 private:
     SwapChain(VkDevice device, VkSurfaceKHR surface) : _device(device),
-                                                       _surface(surface) {}
+                                                       _surface(surface)
+    {
+        this->_first_use.set();
+    }
 
     VkDevice _device = VK_NULL_HANDLE;
     VkSurfaceKHR _surface = VK_NULL_HANDLE;
@@ -488,9 +532,44 @@ private:
 
     std::vector<VkImage> _images;
     std::vector<VkImageView> _views;
+    std::bitset<32> _first_use;
+    std::vector<VkSemaphore> _image_rendered_semaphores;
 
     VkFormat _format = VK_FORMAT_UNDEFINED;
     VkExtent2D _extent;
+};
+
+// =============================================================================
+//  Fence
+// =============================================================================
+
+class Fence
+{
+    friend class VulkanContext;
+
+public:
+    Fence() = default;
+    ~Fence();
+
+    PROSERPINE_NON_COPYABLE_MOVABLE(Fence);
+
+    inline VkFence handle() const { return this->_fence; }
+
+    inline VkResult wait(std::uint64_t timeout_ns = PROSERPINE_WAIT_INFINITE)
+    {
+        return vkWaitForFences(this->_device, 1, &this->_fence, VK_TRUE, timeout_ns);
+    }
+
+    inline void reset()
+    {
+        vkResetFences(this->_device, 1, &this->_fence);
+    }
+
+private:
+    Fence(VkDevice device, bool signaled = false);
+
+    VkDevice _device = VK_NULL_HANDLE;
+    VkFence _fence = VK_NULL_HANDLE;
 };
 
 // =============================================================================
@@ -515,6 +594,28 @@ public:
     std::uint64_t counter() const;
 
 private:
+    VkDevice _device = VK_NULL_HANDLE;
+    VkSemaphore _sema = VK_NULL_HANDLE;
+};
+
+// =============================================================================
+//  Semaphore
+// =============================================================================
+
+class Semaphore
+{
+    friend class VulkanContext;
+public:
+    Semaphore() = default;
+    ~Semaphore();
+
+    PROSERPINE_NON_COPYABLE_MOVABLE(Semaphore);
+
+    inline VkSemaphore handle() const { return this->_sema; }
+
+private:
+    Semaphore(VkDevice device);
+
     VkDevice _device = VK_NULL_HANDLE;
     VkSemaphore _sema = VK_NULL_HANDLE;
 };
@@ -634,6 +735,7 @@ public:
         VkImageType type = VK_IMAGE_TYPE_2D;
         std::uint32_t mip_levels = 1;
         std::uint32_t array_layers = 1;
+        VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT;
         VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
         VkMemoryPropertyFlags memory_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
     };
@@ -810,6 +912,128 @@ private:
 };
 
 // =============================================================================
+//  Command Buffer
+// =============================================================================
+
+class CommandBuffer
+{
+public:
+    enum class Level
+    {
+        Primary,
+        Secondary,
+    };
+
+    struct RenderingAttachment
+    {
+        VkImageView view;
+        VkImageLayout layout;
+        VkAttachmentLoadOp load_op;
+        VkAttachmentStoreOp store_op;
+        VkClearValue clear;
+    };
+
+    struct RenderingInfo
+    {
+        VkRect2D render_area;
+        std::uint32_t layer_count = 1;
+
+        std::vector<RenderingAttachment> color_attachments;
+        std::optional<RenderingAttachment> depth_attachment;
+    };
+
+    CommandBuffer() = default;
+    ~CommandBuffer();
+
+    PROSERPINE_NON_COPYABLE_MOVABLE(CommandBuffer);
+
+    void reset();
+
+    void begin(VkCommandBufferUsageFlags flags = 0);
+    void end();
+
+    void transition_image(VkImage image,
+                          VkImageLayout old_layout,
+                          VkImageLayout new_layout,
+                          VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
+
+    void begin_render(const RenderingInfo& info);
+    void end_render();
+
+    void bind_graphics_pipeline(VkPipeline pipeline);
+    void bind_compute_pipeline(VkPipeline pipeline);
+
+    void set_viewport(float width,
+                      float height,
+                      float x = 0.0f,
+                      float y = 0.0f,
+                      float min_depth = 0.0f,
+                      float max_depth = 1.0f);
+
+    void set_scissor(std::uint32_t width,
+                     std::uint32_t height,
+                     std::int32_t offset_x = 0,
+                     std::int32_t offset_y = 0);
+
+    void draw(std::uint32_t vertex_count,
+              std::uint32_t instance_count,
+              std::uint32_t first_vertex,
+              std::uint32_t first_instance);
+
+    inline VkCommandBuffer handle() const { return this->_buffer; }
+
+private:
+    enum class State
+    {
+        Initial,
+        Recording,
+        Executable,
+        Pending,
+    };
+
+    friend class CommandPool;
+    friend class VulkanContext;
+
+    CommandBuffer(VkDevice device, VkCommandPool pool, CommandBuffer::Level level);
+
+    VkDevice _device = VK_NULL_HANDLE;
+    VkCommandPool _pool = VK_NULL_HANDLE;
+    VkCommandBuffer _buffer = VK_NULL_HANDLE;
+
+    State _state;
+};
+
+// =============================================================================
+//  Command Pool
+// =============================================================================
+
+class CommandPool
+{
+    friend class VulkanContext;
+
+public:
+    CommandPool() = default;
+    ~CommandPool();
+
+    PROSERPINE_NON_COPYABLE_MOVABLE(CommandPool);
+
+    CommandBuffer allocate(CommandBuffer::Level level = CommandBuffer::Level::Primary);
+
+    inline void reset()
+    {
+        vkResetCommandPool(this->_device, this->_pool, 0);
+    }
+
+private:
+    CommandPool(VkDevice device, std::uint32_t queue_family_index);
+
+    bool ready() const { return this->_pool != VK_NULL_HANDLE; }
+
+    VkDevice _device = VK_NULL_HANDLE;
+    VkCommandPool _pool = VK_NULL_HANDLE;
+};
+
+// =============================================================================
 //  Command Profiler
 // =============================================================================
 
@@ -897,9 +1121,14 @@ public:
 
     PROSERPINE_NON_COPYABLE_MOVABLE(ShaderModule);
 
-    static Expected<ShaderModule> create(VkDevice device,
-                                         const std::vector<std::uint32_t>& spirv,
-                                         VkShaderStageFlagBits stage);
+    static Expected<ShaderModule> create_compute_shader(VkDevice device,
+                                                        const char* path);
+
+    static Expected<ShaderModule> create_vertex_shader(VkDevice device,
+                                                       const char* path);
+
+    static Expected<ShaderModule> create_fragment_shader(VkDevice device,
+                                                         const char* path);
 
     inline VkShaderModule handle() const { return this->_module; }
     inline VkShaderStageFlagBits stage() const { return this->_stage; }
@@ -919,6 +1148,10 @@ private:
     std::vector<VertexInputAttribute> _vertex_inputs;
 
     void reflect_spirv(const std::vector<std::uint32_t>& spirv);
+
+    static Expected<ShaderModule> create(VkDevice device,
+                                         const std::vector<std::uint32_t>& spirv,
+                                         VkShaderStageFlagBits stage);
 };
 
 // =============================================================================
@@ -988,41 +1221,52 @@ struct VertexInputState
     std::vector<VkVertexInputAttributeDescription> attributes;
 };
 
-// Info used to build the GraphicsPipeline.
-// "Reasonable" default values so you don't have to initialize everything
-struct GraphicsPipelineInfo
-{
-    // Input Assembly
-    VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    VkBool32 primitive_restart_enable = VK_FALSE;
-
-    // Viewport / scissor
-    std::uint32_t viewport_count = 1;
-    std::uint32_t scissor_count = 1;
-
-    // Rasterization
-    VkPolygonMode polygon_mode = VK_POLYGON_MODE_FILL;
-    VkCullModeFlags cull_mode = VK_CULL_MODE_BACK_BIT;
-    VkFrontFace front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    float line_width = 1.0f;
-
-    // Multisample
-    VkSampleCountFlagBits rasterization_samples = VK_SAMPLE_COUNT_1_BIT;
-
-    // Depth/stencil
-    VkBool32 depth_test_enable = VK_TRUE;
-    VkBool32 depth_write_enable = VK_TRUE;
-    VkCompareOp depth_compare_op = VK_COMPARE_OP_LESS;
-
-    // Color Blend
-    VkColorComponentFlags color_write_mask = VK_COLOR_COMPONENT_R_BIT |
-                                             VK_COLOR_COMPONENT_G_BIT |
-                                             VK_COLOR_COMPONENT_B_BIT |
-                                             VK_COLOR_COMPONENT_A_BIT;
-};
-
 class GraphicsPipeline
 {
+public:
+    // Info used to build the GraphicsPipeline.
+    // "Reasonable" default values so you don't have to initialize everything
+    struct CreateInfo
+    {
+        // Color format should match the one of the swapchain
+        VkFormat color_format = VK_FORMAT_R8G8B8A8_SRGB;
+        VkFormat depth_format = VK_FORMAT_D32_SFLOAT;
+
+        // Input Assembly
+        VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        VkBool32 primitive_restart_enable = VK_FALSE;
+
+        // Viewport / scissor
+        std::uint32_t viewport_count = 1;
+        std::uint32_t scissor_count = 1;
+
+        // Depth/stencil
+        VkBool32 depth_test_enable = VK_TRUE;
+        VkBool32 depth_write_enable = VK_TRUE;
+        VkCompareOp depth_compare_op = VK_COMPARE_OP_LESS;
+
+        // Color Blend
+        VkColorComponentFlags color_write_mask = VK_COLOR_COMPONENT_R_BIT |
+                                                 VK_COLOR_COMPONENT_G_BIT |
+                                                 VK_COLOR_COMPONENT_B_BIT |
+                                                 VK_COLOR_COMPONENT_A_BIT;
+
+        // Rasterization
+        VkPipelineRasterizationStateCreateInfo rasterization = {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+            .polygonMode = VK_POLYGON_MODE_FILL,
+            .cullMode = VK_CULL_MODE_BACK_BIT,
+            .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+            .lineWidth = 1.0f,
+        };
+
+        // Multisample
+        VkPipelineMultisampleStateCreateInfo multisample = {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+            .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+        };
+    };
+
 public:
     GraphicsPipeline();
     ~GraphicsPipeline();
@@ -1037,14 +1281,10 @@ private:
     VkPipeline _pipeline = VK_NULL_HANDLE;
 
     friend Expected<GraphicsPipeline> create_graphics_pipeline(VkDevice,
-                                                               const GraphicsPipelineInfo&,
+                                                               const GraphicsPipeline::CreateInfo&,
                                                                const ShaderStages&,
                                                                const VertexInputState&,
-                                                               VkPipelineLayout,
-                                                               VkFormat,
-                                                               VkFormat,
-                                                               const VkPipelineRasterizationStateCreateInfo*,
-                                                               const VkPipelineMultisampleStateCreateInfo*);
+                                                               VkPipelineLayout);
 };
 
 class ComputePipeline
@@ -1069,14 +1309,10 @@ private:
 };
 
 Expected<GraphicsPipeline> create_graphics_pipeline(VkDevice device,
-                                                    const GraphicsPipelineInfo& info,
+                                                    const GraphicsPipeline::CreateInfo& info,
                                                     const ShaderStages& stages,
                                                     const VertexInputState& vertex_input,
-                                                    VkPipelineLayout layout,
-                                                    VkFormat color_format = VK_FORMAT_B8G8R8A8_UNORM,
-                                                    VkFormat depth_format = VK_FORMAT_UNDEFINED,
-                                                    const VkPipelineRasterizationStateCreateInfo* rasterization = nullptr,
-                                                    const VkPipelineMultisampleStateCreateInfo* multisample = nullptr);
+                                                    VkPipelineLayout layout);
 
 Expected<ComputePipeline> create_compute_pipeline(VkDevice device,
                                                   const ShaderModule& shader,
@@ -1111,6 +1347,8 @@ private:
 class VulkanContext
 {
 public:
+    static constexpr std::size_t NUM_QUEUES = static_cast<std::size_t>(QueueType::Count);
+
     struct CreateInfo {
         const char* application_name = "Vulkan App";
         const char* engine_name = "Proserpine";
@@ -1123,14 +1361,13 @@ public:
         DescriptorPool::CreateInfo descriptor_pool_info;
     };
 
-    static Expected<VulkanContext> create(VulkanContext::CreateInfo& info);
+    static Expected<VulkanContext> create(VulkanContext::CreateInfo& info,
+                                          std::function<bool(VkInstance, VkSurfaceKHR*)> create_surface_callback = [](VkInstance, VkSurfaceKHR*) { return true; });
 
     VulkanContext() = default;
     ~VulkanContext();
 
     PROSERPINE_NON_COPYABLE_MOVABLE(VulkanContext);
-
-    bool create_surface(std::function<bool(VkInstance, VkSurfaceKHR*)> create_callback);
 
     inline VkInstance instance() const { return this->_instance; }
     inline VkPhysicalDevice physical_device() const { return this->_physical_device; }
@@ -1150,18 +1387,52 @@ public:
     RenderDocIntegration& renderdoc();
     FencePool& fence_pool();
     DescriptorPool& descriptor_pool();
+    // Returns a CommandPool reference owned by the context.
+    CommandPool& command_pool(QueueType queue_type);
     CommandProfiler& command_profiler();
 
     Expected<Buffer> create_buffer(const Buffer::CreateInfo& info);
     Expected<Image> create_image(const Image::CreateInfo& info);
+    Expected<Image> create_depth_image(VkExtent2D extent,
+                                       VkFormat format = VK_FORMAT_D32_SFLOAT);
     Expected<TimelineSemaphore> create_timeline_semaphore(std::uint64_t initial_value = 0);
-    Expected<VkFence> create_fence(bool signaled = false);
+    Expected<Semaphore> create_semaphore();
+    Expected<Fence> create_fence(bool signaled = false);
+
+    // Returns a new CommandPool
     Expected<SwapChain> create_swapchain(SwapChain::CreateInfo& create_info);
+
+    // Returns a new CommandPool
+    Expected<CommandPool> create_command_pool(QueueType queue_type);
 
     void wait_idle();
 
     void immediate_submit(QueueType queue_type,
                           const std::function<void(VkCommandBuffer)>& record);
+
+    struct SubmitInfo
+    {
+        std::vector<CommandBuffer*> command_buffers;
+        std::vector<VkSemaphore> wait_semaphores;
+        std::vector<VkSemaphore> finished_semaphores;
+
+        VkPipelineStageFlags wait_stages;
+
+        VkFence fence = VK_NULL_HANDLE;
+    };
+
+    void submit(QueueType queue_type, const SubmitInfo& info);
+
+    struct PresentInfo
+    {
+        VkSwapchainKHR swapchain;
+
+        std::vector<VkSemaphore> wait_semaphores;
+
+        std::uint32_t image_index;
+    };
+
+    VkResult present(const PresentInfo& info);
 
     Expected<DescriptorSet> allocate_descriptor_set(VkDescriptorSetLayout layout);
 
@@ -1184,6 +1455,9 @@ private:
     };
 
     QueueInfo _queues[static_cast<std::size_t>(QueueType::Count)]{};
+
+    // Lazy-initialized command pools
+    std::array<CommandPool, NUM_QUEUES> _command_pools;
 
     struct ImmediateContext
     {
@@ -1506,8 +1780,6 @@ inline Expected<SelectedDevice> VulkanContext::select_device(const DeviceFilter&
                 has_graphics = true;
 
                 __LOG_TRACE("Device has a valid graphics queue family");
-
-                break;
             }
 
             if(this->_surface != VK_NULL_HANDLE)
@@ -1594,6 +1866,8 @@ inline Expected<SelectedDevice> VulkanContext::select_device(const DeviceFilter&
         {
             selected.queue_family_indices[static_cast<std::size_t>(QueueType::Graphics)] = i;
             selected.queue_family_valid[static_cast<std::size_t>(QueueType::Graphics)] = true;
+
+            __LOG_TRACE("Found Graphics Queue");
         }
 
         // Compute Queue Family
@@ -1602,7 +1876,8 @@ inline Expected<SelectedDevice> VulkanContext::select_device(const DeviceFilter&
         {
             selected.queue_family_indices[static_cast<std::size_t>(QueueType::Compute)] = i;
             selected.queue_family_valid[static_cast<std::size_t>(QueueType::Compute)] = true;
-            break;
+
+            __LOG_TRACE("Found Compute Queue");
         }
 
         // Present Queue Family
@@ -1619,6 +1894,8 @@ inline Expected<SelectedDevice> VulkanContext::select_device(const DeviceFilter&
             {
                 selected.queue_family_indices[static_cast<std::size_t>(QueueType::Present)] = i;
                 selected.queue_family_valid[static_cast<std::size_t>(QueueType::Present)] = true;
+
+                __LOG_TRACE("Found Present Queue");
             }
         }
 
@@ -1629,7 +1906,6 @@ inline Expected<SelectedDevice> VulkanContext::select_device(const DeviceFilter&
         {
             selected.queue_family_indices[static_cast<std::size_t>(QueueType::Transfer)] = i;
             selected.queue_family_valid[static_cast<std::size_t>(QueueType::Transfer)] = true;
-            break;
         }
     }
 
@@ -1817,13 +2093,18 @@ inline VkResult VulkanContext::create_logical_device(const SelectedDevice& selec
     // Create Queues
     __LOG_TRACE("Creating logical device queues");
 
-    for(std::size_t i = 0; i < static_cast<std::size_t>(QueueType::Count); ++i)
+    for(std::uint32_t i = 0; i < static_cast<std::uint32_t>(QueueType::Count); ++i)
     {
         if(selected.queue_family_valid[i])
         {
+            __LOG_TRACE("Getting Device Queue: " __FMT_U32 "", i);
             this->_queues[i].family = selected.queue_family_indices[i];
             this->_queues[i].valid  = true;
             vkGetDeviceQueue(this->_device, this->_queues[i].family, 0, &this->_queues[i].queue);
+        }
+        else
+        {
+            __LOG_TRACE("Cannot get Device Queue: " __FMT_U32 "", i);
         }
     }
 
@@ -1846,6 +2127,8 @@ inline VkResult VulkanContext::create_logical_device(const SelectedDevice& selec
             vkAllocateCommandBuffers(this->_device, &alloc_create_info, &this->_immediate_contexts[i].cmd);
 
             VkFenceCreateInfo fence_create_info{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+            fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
             vkCreateFence(this->_device, &fence_create_info, nullptr, &this->_immediate_contexts[i].fence);
         }
     }
@@ -1859,7 +2142,8 @@ inline VkResult VulkanContext::create_logical_device(const SelectedDevice& selec
 //  VulkanContext::create
 // ============================================================================
 
-inline Expected<VulkanContext> VulkanContext::create(VulkanContext::CreateInfo& info)
+inline Expected<VulkanContext> VulkanContext::create(VulkanContext::CreateInfo& info,
+                                                     std::function<bool(VkInstance, VkSurfaceKHR*)> create_surface_callback)
 {
     __LOG_TRACE("Creating a new VulkanContext");
 
@@ -1874,13 +2158,18 @@ inline Expected<VulkanContext> VulkanContext::create(VulkanContext::CreateInfo& 
         return Error(result, "Failed to create VulkanContext instance");
     }
 
+    if(!create_surface_callback(ctx._instance, &ctx._surface))
+    {
+        __LOG_ERROR("Failed to create a surface");
+        return Error(result, "Failed to create surface");
+    }
+
+    __LOG_TRACE("Created surface successfully");
+
     auto selected = ctx.select_device(info.device_filter);
 
     if(!selected)
-    {
-        vkDestroyInstance(ctx._instance, nullptr);
         return selected.error();
-    }
 
     ctx._selected_device = selected.value();
     ctx._physical_device = ctx._selected_device.physical_device;
@@ -1898,10 +2187,7 @@ inline Expected<VulkanContext> VulkanContext::create(VulkanContext::CreateInfo& 
     result = ctx.create_logical_device(ctx._selected_device, info.features);
 
     if(result != VK_SUCCESS)
-    {
-        vkDestroyInstance(ctx._instance, nullptr);
         return Error(result, "Failed to create logical device");
-    }
 
     ctx._descriptor_pool_create_info = info.descriptor_pool_info;
 
@@ -2003,26 +2289,13 @@ inline VulkanContext& VulkanContext::operator=(VulkanContext&& other) noexcept
 //  VulkanContext accessors/getters
 // =============================================================================
 
-inline bool VulkanContext::create_surface(std::function<bool(VkInstance, VkSurfaceKHR*)> create_callback)
-{
-    __LOG_TRACE("VulkanContext: Creating a surface");
-
-    PROSERPINE_ASSERT(this->_instance != VK_NULL_HANDLE, "instance is NULL", false);
-
-    if(this->_surface != VK_NULL_HANDLE)
-    {
-        __LOG_TRACE("VulkanContext: Surface has already been created");
-        return true;
-    }
-
-    return create_callback(this->_instance, &this->_surface);
-}
-
 inline VkQueue VulkanContext::queue(QueueType type,
                                     std::uint32_t /* index */) const
 {
     std::size_t i = static_cast<std::size_t>(type);
+
     PROSERPINE_ASSERT(this->_queues[i].valid, "Queue is invalid", VK_NULL_HANDLE);
+
     return this->_queues[i].queue;
 }
 
@@ -2098,6 +2371,16 @@ inline DescriptorPool& VulkanContext::descriptor_pool()
     return *this->_descriptor_pool;
 }
 
+inline CommandPool& VulkanContext::command_pool(QueueType queue_type)
+{
+    const std::size_t index = static_cast<std::size_t>(queue_type);
+
+    if(!this->_command_pools.at(index).ready())
+        this->_command_pools[index] = std::move(CommandPool(this->_device, this->queue_family(queue_type)));
+
+    return this->_command_pools[index];
+}
+
 inline CommandProfiler& VulkanContext::command_profiler()
 {
     if(!this->_command_profiler)
@@ -2134,6 +2417,22 @@ inline Expected<Image> VulkanContext::create_image(const Image::CreateInfo& info
     return Image(this->_device, this->_physical_device, info);
 }
 
+inline Expected<Image> VulkanContext::create_depth_image(VkExtent2D extent,
+                                                         VkFormat format)
+{
+    PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", Error("Invalid Device"));
+    PROSERPINE_ASSERT(this->_physical_device != VK_NULL_HANDLE, "Physical device is NULL", Error("Invalid Physical Device"));
+
+    Image::CreateInfo info{};
+    info.extent = { extent.width, extent.height, 1};
+    info.format = format;
+    info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    info.memory_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    info.aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+    return this->create_image(info);
+}
+
 inline Expected<TimelineSemaphore> VulkanContext::create_timeline_semaphore(std::uint64_t initial_value)
 {
     PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", Error("Invalid Device"));
@@ -2141,21 +2440,18 @@ inline Expected<TimelineSemaphore> VulkanContext::create_timeline_semaphore(std:
     return TimelineSemaphore(this->_device, initial_value);
 }
 
-inline Expected<VkFence> VulkanContext::create_fence(bool signaled)
+inline Expected<Semaphore> VulkanContext::create_semaphore()
 {
     PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", Error("Invalid Device"));
 
-    VkFenceCreateInfo ci{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    return Semaphore(this->_device);
+}
 
-    if(signaled)
-        ci.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+inline Expected<Fence> VulkanContext::create_fence(bool signaled)
+{
+    PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", Error("Invalid Device"));
 
-    VkFence fence = VK_NULL_HANDLE;
-
-    PROSERPINE_VK_CHECK_VOID(vkCreateFence(this->_device, &ci, nullptr, &fence),
-                             "Failed to create fence");
-
-    return fence;
+    return Fence(this->_device, signaled);
 }
 
 inline Expected<SwapChain> VulkanContext::create_swapchain(SwapChain::CreateInfo& create_info)
@@ -2341,9 +2637,10 @@ inline Expected<SwapChain> VulkanContext::create_swapchain(SwapChain::CreateInfo
     sc._images.resize(static_cast<std::size_t>(image_count));
     vkGetSwapchainImagesKHR(this->_device, sc._swapchain, &image_count, sc._images.data());
 
-    // Create swapchain image views
+    // Create swapchain image views and render semaphores
 
     sc._views.resize(static_cast<std::size_t>(image_count));
+    sc._image_rendered_semaphores.resize(static_cast<std::size_t>(image_count));
 
     for(std::uint32_t i = 0; const auto& image : sc._images)
     {
@@ -2367,16 +2664,32 @@ inline Expected<SwapChain> VulkanContext::create_swapchain(SwapChain::CreateInfo
                                                    &sc._views[i]),
                                  "Failed to create VkImageView");
 
+        VkSemaphoreCreateInfo semaphore_create_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+
+        PROSERPINE_VK_CHECK_VOID(vkCreateSemaphore(this->_device,
+                                                   &semaphore_create_info,
+                                                   nullptr,
+                                                   &sc._image_rendered_semaphores[i]),
+                                 "Failed to create VkSemaphore");
+
         i++;
     }
 
     return sc;
 }
 
+inline Expected<CommandPool> VulkanContext::create_command_pool(QueueType queue_type)
+{
+    return CommandPool(this->_device, this->queue_family(queue_type));
+}
+
 inline void VulkanContext::wait_idle()
 {
     if(this->_device != VK_NULL_HANDLE)
+    {
+        __LOG_TRACE("VulkanContext: waiting for device idle");
         vkDeviceWaitIdle(this->_device);
+    }
 }
 
 inline void VulkanContext::immediate_submit(QueueType queue_type,
@@ -2393,6 +2706,7 @@ inline void VulkanContext::immediate_submit(QueueType queue_type,
     PROSERPINE_ASSERT(imm_ctx.cmd != VK_NULL_HANDLE, "Invalid CmdBuffer", );
     PROSERPINE_ASSERT(imm_ctx.fence != VK_NULL_HANDLE, "Invalid Fence", );
 
+    vkWaitForFences(this->_device, 1, &imm_ctx.fence, VK_TRUE, PROSERPINE_WAIT_INFINITE);
     vkResetFences(this->_device, 1, &imm_ctx.fence);
     vkResetCommandPool(this->_device, imm_ctx.pool, 0);
 
@@ -2411,6 +2725,56 @@ inline void VulkanContext::immediate_submit(QueueType queue_type,
     vkQueueSubmit(this->_queues[qi].queue, 1, &submit, imm_ctx.fence);
 
     vkWaitForFences(this->_device, 1, &imm_ctx.fence, VK_TRUE, PROSERPINE_WAIT_INFINITE);
+}
+
+inline void VulkanContext::submit(QueueType queue_type, const SubmitInfo& info)
+{
+    std::size_t qi = static_cast<std::size_t>(queue_type);
+    auto queue = this->_queues[qi].queue;
+
+    std::vector<VkCommandBuffer> cmd_handles;
+
+    for(CommandBuffer* cmd : info.command_buffers)
+    {
+        cmd_handles.push_back(cmd->handle());
+        cmd->_state = CommandBuffer::State::Pending;
+    }
+
+    VkSubmitInfo submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submit_info.commandBufferCount = static_cast<std::uint32_t>(cmd_handles.size());
+    submit_info.pCommandBuffers = cmd_handles.data();
+
+    if(info.wait_semaphores.size() > 0)
+    {
+        submit_info.waitSemaphoreCount = info.wait_semaphores.size();
+        submit_info.pWaitSemaphores = info.wait_semaphores.data();
+    }
+
+    submit_info.pWaitDstStageMask = &info.wait_stages;
+
+    if(info.finished_semaphores.size() > 0)
+    {
+        submit_info.signalSemaphoreCount = static_cast<std::uint32_t>(info.finished_semaphores.size());
+        submit_info.pSignalSemaphores = info.finished_semaphores.data();
+    }
+
+    vkQueueSubmit(queue, 1, &submit_info, info.fence);
+}
+
+inline VkResult VulkanContext::present(const PresentInfo& info)
+{
+    VkPresentInfoKHR present_info{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
+    present_info.swapchainCount = 1;
+    present_info.pSwapchains = &info.swapchain;
+    present_info.pImageIndices = &info.image_index;
+
+    if(info.wait_semaphores.size() > 0)
+    {
+        present_info.waitSemaphoreCount = static_cast<std::uint32_t>(info.wait_semaphores.size());
+        present_info.pWaitSemaphores = info.wait_semaphores.data();
+    }
+
+    return vkQueuePresentKHR(this->queue(QueueType::Present), &present_info);
 }
 
 inline Expected<DescriptorSet> VulkanContext::allocate_descriptor_set(VkDescriptorSetLayout layout)
@@ -2435,6 +2799,9 @@ inline SwapChain::~SwapChain()
         for(auto& view : this->_views)
             vkDestroyImageView(this->_device, view, nullptr);
 
+        for(auto& semaphore : this->_image_rendered_semaphores)
+            vkDestroySemaphore(this->_device, semaphore, nullptr);
+
         this->_views.clear();
 
         this->_device = VK_NULL_HANDLE;
@@ -2445,7 +2812,7 @@ inline SwapChain::~SwapChain()
 inline SwapChain::SwapChain(SwapChain&& other) noexcept
 {
     __MOVE_AND_NULL(_device, _surface, _swapchain);
-    __MOVE(_images, _views, _format, _extent);
+    __MOVE(_images, _views, _first_use, _image_rendered_semaphores, _format, _extent);
 }
 
 inline SwapChain& SwapChain::operator=(SwapChain&& other) noexcept
@@ -2453,7 +2820,7 @@ inline SwapChain& SwapChain::operator=(SwapChain&& other) noexcept
     if(this != &other)
     {
         __MOVE_AND_NULL(_device, _surface, _swapchain);
-        __MOVE(_images, _views, _format, _extent);
+        __MOVE(_images, _views, _first_use, _image_rendered_semaphores, _format, _extent);
     }
 
     return *this;
@@ -2533,6 +2900,45 @@ inline std::uint64_t TimelineSemaphore::counter() const
     std::uint64_t value = 0;
     vkGetSemaphoreCounterValue(this->_device, this->_sema, &value);
     return value;
+}
+
+// ============================================================================
+//  Semaphore implementation
+// ============================================================================
+
+inline Semaphore::Semaphore(VkDevice device) : _device(device)
+{
+    VkSemaphoreCreateInfo info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+
+    PROSERPINE_VK_CHECK_VOID(vkCreateSemaphore(this->_device, &info, nullptr, &this->_sema),
+                             "Failed to create VkSemaphore");
+}
+
+inline Semaphore::~Semaphore()
+{
+    if(this->_device != VK_NULL_HANDLE)
+    {
+        if(this->_sema != VK_NULL_HANDLE)
+        {
+            vkDestroySemaphore(this->_device, this->_sema, nullptr);
+            this->_sema = VK_NULL_HANDLE;
+        }
+    }
+}
+
+inline Semaphore::Semaphore(Semaphore&& other) noexcept
+{
+    __MOVE_AND_NULL(_device, _sema);
+}
+
+inline Semaphore& Semaphore::operator=(Semaphore&& other) noexcept
+{
+    if(this != &other)
+    {
+        __MOVE_AND_NULL(_device, _sema);
+    }
+
+    return *this;
 }
 
 // ============================================================================
@@ -2757,6 +3163,47 @@ inline void RenderDocIntegration::end_capture()
 }
 
 // ============================================================================
+//  Fence implementation
+// ============================================================================
+
+inline Fence::Fence(VkDevice device, bool signaled) : _device(device)
+{
+    __LOG_TRACE("Fence: Initializing");
+
+    VkFenceCreateInfo info{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    info.flags = signaled ? VK_FENCE_CREATE_SIGNALED_BIT : 0;
+
+    PROSERPINE_VK_CHECK_VOID(vkCreateFence(this->_device, &info, nullptr, &this->_fence),
+                             "Failed to create Fence");
+}
+
+inline Fence::~Fence()
+{
+    if(this->_device != VK_NULL_HANDLE)
+    {
+        __LOG_TRACE("Fence: Destroying");
+
+        if(this->_fence != VK_NULL_HANDLE)
+            vkDestroyFence(this->_device, this->_fence, nullptr);
+    }
+}
+
+inline Fence::Fence(Fence&& other) noexcept
+{
+    __MOVE_AND_NULL(_device, _fence);
+}
+
+inline Fence& Fence::operator=(Fence&& other) noexcept
+{
+    if(this != &other)
+    {
+        __MOVE_AND_NULL(_device, _fence);
+    }
+
+    return *this;
+}
+
+// ============================================================================
 //  Buffer implementation
 // ============================================================================
 
@@ -2886,7 +3333,6 @@ inline Image::Image(VkDevice device,
     create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
     create_info.usage = info.usage;
     create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     PROSERPINE_VK_CHECK_VOID(vkCreateImage(this->_device, &create_info, nullptr, &this->_image),
                              "Failed to create image");
@@ -2909,7 +3355,7 @@ inline Image::Image(VkDevice device,
     VkImageViewCreateInfo view_create_info{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
     view_create_info.image = this->_image;
     view_create_info.format = info.format;
-    view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    view_create_info.subresourceRange.aspectMask = info.aspect_mask;
     view_create_info.subresourceRange.baseMipLevel = 0;
     view_create_info.subresourceRange.levelCount = info.mip_levels;
     view_create_info.subresourceRange.baseArrayLayer = 0;
@@ -3403,19 +3849,433 @@ inline DescriptorSet& DescriptorSet::update()
 }
 
 // =============================================================================
-//  Command Profiler implementation
+//  Command Buffer implementation
 // =============================================================================
 
-inline CommandProfiler::~CommandProfiler()
+inline CommandBuffer::CommandBuffer(VkDevice device,
+                                    VkCommandPool pool,
+                                    CommandBuffer::Level level) : _device(device),
+                                                                  _pool(pool),
+                                                                  _state(State::Initial)
+{
+    VkCommandBufferAllocateInfo info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    info.commandBufferCount = 1;
+    info.commandPool = pool;
+
+    if(level == CommandBuffer::Level::Primary)
+        info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    else
+        info.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
+
+    PROSERPINE_VK_CHECK_VOID(vkAllocateCommandBuffers(this->_device, &info, &this->_buffer),
+                             "Failed to allocate command buffer");
+
+    this->_state = State::Initial;
+}
+
+inline CommandBuffer::~CommandBuffer()
 {
     if(this->_device != VK_NULL_HANDLE)
     {
-        __LOG_TRACE("CommandProfiler: Destroying");
+        __LOG_TRACE("CommandBuffer: Destroying");
 
-        if(this->_pool != VK_NULL_HANDLE)
-            vkDestroyQueryPool(this->_device, this->_pool, nullptr);
+        vkFreeCommandBuffers(this->_device, this->_pool, 1, &this->_buffer);
     }
 }
+
+inline CommandBuffer::CommandBuffer(CommandBuffer&& other) noexcept
+{
+    __MOVE_AND_NULL(_device, _pool, _buffer);
+    __MOVE(_state);
+}
+
+inline CommandBuffer& CommandBuffer::operator=(CommandBuffer&& other) noexcept
+{
+    if(this != &other)
+    {
+        __MOVE_AND_NULL(_device, _pool, _buffer);
+        __MOVE(_state);
+    }
+
+    return *this;
+}
+
+inline void CommandBuffer::reset()
+{
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
+
+    this->_state = State::Initial;
+    vkResetCommandBuffer(this->_buffer, 0);
+}
+
+inline void CommandBuffer::begin(VkCommandBufferUsageFlags flags)
+{
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
+    PROSERPINE_ASSERT(this->_state == State::Initial, "CommandBuffer is not in initial state",);
+
+    this->_state = State::Recording;
+
+    VkCommandBufferBeginInfo info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    info.flags = flags;
+
+    PROSERPINE_VK_CHECK_VOID(vkBeginCommandBuffer(this->_buffer, &info),
+                             "Failed to begin CommandBuffer recording");
+}
+
+inline void CommandBuffer::end()
+{
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
+    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state",);
+
+    this->_state = State::Executable;
+
+    PROSERPINE_VK_CHECK_VOID(vkEndCommandBuffer(this->_buffer),
+                             "Failed to end CommandBuffer recording");
+}
+
+inline void CommandBuffer::transition_image(VkImage image,
+                                            VkImageLayout old_layout,
+                                            VkImageLayout new_layout,
+                                            VkImageAspectFlags aspect)
+{
+    VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.oldLayout = old_layout;
+    barrier.newLayout = new_layout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange.aspectMask = aspect;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+    VkPipelineStageFlags src_stage;
+    VkPipelineStageFlags dst_stage;
+
+    if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED &&
+       new_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+    {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    }
+    else if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED &&
+            new_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL)
+    {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        dst_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    }
+    else if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED &&
+            new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+    {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        dst_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    }
+    else if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED &&
+            new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    }
+    else if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED &&
+            new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+    {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    }
+    else if(old_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL &&
+            new_layout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
+    {
+        barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        barrier.dstAccessMask = 0;
+        src_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dst_stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    }
+    else if(old_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL &&
+            new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    {
+        barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        src_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    }
+    else if(old_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL &&
+            new_layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)
+    {
+        barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        src_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    }
+    else if(old_layout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR &&
+            new_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+    {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        src_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    }
+    else if(old_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
+            new_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+    {
+        barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        src_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    }
+    else if(old_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
+            new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+    {
+        barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        src_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    }
+    else if(old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
+            new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    {
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    }
+    else if(old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
+            new_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+    {
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    }
+    else if(old_layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL &&
+            new_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+    {
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    }
+    else if(old_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL &&
+            new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    {
+        barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        src_stage = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    }
+    else if(old_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
+            new_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL)
+    {
+        barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        src_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        dst_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    }
+    else
+    {
+        PROSERPINE_ASSERT(false, "Unsupported layout transition",);
+    }
+
+    vkCmdPipelineBarrier(this->_buffer,
+                         src_stage,
+                         dst_stage,
+                         0,
+                         0,
+                         nullptr,
+                         0,
+                         nullptr,
+                         1,
+                         &barrier);
+}
+
+inline void CommandBuffer::begin_render(const RenderingInfo& info)
+{
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
+    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state",);
+
+    std::vector<VkRenderingAttachmentInfo> colors;
+    colors.reserve(info.color_attachments.size());
+
+    for(const auto& c : info.color_attachments)
+    {
+        VkRenderingAttachmentInfo ra_info{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+        ra_info.imageView = c.view;
+        ra_info.imageLayout = c.layout;
+        ra_info.loadOp = c.load_op;
+        ra_info.storeOp = c.store_op;
+        ra_info.clearValue = c.clear;
+
+        colors.push_back(ra_info);
+    }
+
+    VkRenderingAttachmentInfo depth{};
+
+    if(info.depth_attachment)
+    {
+        const auto depth_attachment = info.depth_attachment.value();
+        depth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        depth.imageView = depth_attachment.view;
+        depth.imageLayout = depth_attachment.layout;
+        depth.loadOp = depth_attachment.load_op;
+        depth.storeOp = depth_attachment.store_op;
+        depth.clearValue = depth_attachment.clear;
+    }
+
+    VkRenderingInfo render_info{VK_STRUCTURE_TYPE_RENDERING_INFO};
+    render_info.renderArea = info.render_area;
+    render_info.layerCount = info.layer_count;
+    render_info.colorAttachmentCount = static_cast<std::int32_t>(colors.size());
+    render_info.pColorAttachments = colors.data();
+
+    if(info.depth_attachment)
+        render_info.pDepthAttachment = &depth;
+
+    __LOG_TRACE("CommandBuffer: Beginning render (color attachments: " __FMT_U32 ", depth attachment: " __FMT_BOOL ")",
+                static_cast<std::uint32_t>(info.color_attachments.size()),
+                static_cast<bool>(info.depth_attachment));
+
+    vkCmdBeginRendering(this->_buffer, &render_info);
+}
+
+inline void CommandBuffer::end_render()
+{
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
+    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state",);
+
+    __LOG_TRACE("CommandBuffer: Ending render");
+
+    vkCmdEndRendering(this->_buffer);
+}
+
+inline void CommandBuffer::bind_graphics_pipeline(VkPipeline pipeline)
+{
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
+    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state",);
+
+    vkCmdBindPipeline(this->_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+}
+
+inline void CommandBuffer::bind_compute_pipeline(VkPipeline pipeline)
+{
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
+    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state",);
+
+    vkCmdBindPipeline(this->_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+}
+
+inline void CommandBuffer::set_viewport(float width,
+                                        float height,
+                                        float x,
+                                        float y,
+                                        float min_depth,
+                                        float max_depth)
+{
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
+    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state",);
+
+    VkViewport viewport{};
+    viewport.x = x;
+    viewport.y = y;
+    viewport.width = width;
+    viewport.height = height;
+    viewport.minDepth = min_depth;
+    viewport.maxDepth = max_depth;
+
+    vkCmdSetViewport(this->_buffer, 0, 1, &viewport);
+}
+
+inline void CommandBuffer::set_scissor(std::uint32_t width,
+                                       std::uint32_t height,
+                                       std::int32_t offset_x,
+                                       std::int32_t offset_y)
+{
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
+    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state",);
+
+    VkRect2D scissor{};
+    scissor.offset = { offset_x, offset_y };
+    scissor.extent = { width, height };
+
+    vkCmdSetScissor(this->_buffer, 0, 1, &scissor);
+}
+
+inline void CommandBuffer::draw(std::uint32_t vertex_count,
+                                std::uint32_t instance_count,
+                                std::uint32_t first_vertex,
+                                std::uint32_t first_instance)
+{
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
+    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state",);
+
+    __LOG_TRACE("CommandBuffer: drawcall (" __FMT_U32 "," __FMT_U32 "," __FMT_U32 "," __FMT_U32 ")",
+                vertex_count, instance_count, first_vertex, first_instance);
+
+    vkCmdDraw(this->_buffer, vertex_count, instance_count, first_vertex, first_instance);
+}
+
+// =============================================================================
+//  Command Pool implementation
+// =============================================================================
+
+inline CommandPool::CommandPool(VkDevice device, std::uint32_t queue_family_index) : _device(device)
+{
+    __LOG_TRACE("CommandPool: Initializing");
+
+    VkCommandPoolCreateInfo info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    info.queueFamilyIndex = queue_family_index;
+    info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+    PROSERPINE_VK_CHECK_VOID(vkCreateCommandPool(this->_device, &info, nullptr, &this->_pool),
+                             "Failed to create CommandPool");
+}
+
+inline CommandPool::~CommandPool()
+{
+    if(this->_device != VK_NULL_HANDLE)
+    {
+        __LOG_TRACE("CommandPool: Destroying");
+
+        if(this->_pool != VK_NULL_HANDLE)
+            vkDestroyCommandPool(this->_device, this->_pool, nullptr);
+    }
+}
+
+inline CommandPool::CommandPool(CommandPool&& other) noexcept
+{
+    __MOVE_AND_NULL(_device, _pool);
+}
+
+inline CommandPool& CommandPool::operator=(CommandPool&& other) noexcept
+{
+    if(this != &other)
+    {
+        __MOVE_AND_NULL(_device, _pool);
+    }
+
+    return *this;
+}
+
+inline CommandBuffer CommandPool::allocate(CommandBuffer::Level level)
+{
+    return CommandBuffer(this->_device, this->_pool, level);
+}
+
+// =============================================================================
+//  Command Profiler implementation
+// =============================================================================
 
 inline CommandProfiler::CommandProfiler(VkDevice device, VkPhysicalDevice physical_device) : _device(device)
 {
@@ -3438,6 +4298,17 @@ inline CommandProfiler::CommandProfiler(VkDevice device, VkPhysicalDevice physic
 
     __LOG_TRACE("CommandProfiler: Initialized (timestamp period: " __FMT_FLT32 ")",
                 this->_timestamp_period);
+}
+
+inline CommandProfiler::~CommandProfiler()
+{
+    if(this->_device != VK_NULL_HANDLE)
+    {
+        __LOG_TRACE("CommandProfiler: Destroying");
+
+        if(this->_pool != VK_NULL_HANDLE)
+            vkDestroyQueryPool(this->_device, this->_pool, nullptr);
+    }
 }
 
 inline CommandProfiler::CommandProfiler(CommandProfiler&& other) noexcept
@@ -3553,6 +4424,39 @@ inline Expected<SPIRVByteCode> load_spirv_file(const char* file_path) noexcept
 inline ShaderModule::ShaderModule()
 {
     __LOG_TRACE("ShaderModule: Initializing ShaderModule");
+}
+
+inline Expected<ShaderModule> ShaderModule::create_compute_shader(VkDevice device,
+                                                                  const char* path)
+{
+    const auto spirv = load_spirv_file(path);
+
+    if(spirv.has_error())
+        return spirv.error();
+
+    return ShaderModule::create(device, spirv.value(), VK_SHADER_STAGE_COMPUTE_BIT);
+}
+
+inline Expected<ShaderModule> ShaderModule::create_vertex_shader(VkDevice device,
+                                                                 const char* path)
+{
+    const auto spirv = load_spirv_file(path);
+
+    if(spirv.has_error())
+        return spirv.error();
+
+    return ShaderModule::create(device, spirv.value(), VK_SHADER_STAGE_VERTEX_BIT);
+}
+
+inline Expected<ShaderModule> ShaderModule::create_fragment_shader(VkDevice device,
+                                                                   const char* path)
+{
+    const auto spirv = load_spirv_file(path);
+
+    if(spirv.has_error())
+        return spirv.error();
+
+    return ShaderModule::create(device, spirv.value(), VK_SHADER_STAGE_FRAGMENT_BIT);
 }
 
 inline Expected<ShaderModule> ShaderModule::create(VkDevice device,
@@ -4085,10 +4989,10 @@ inline PipelineLayout::PipelineLayout()
 
 inline PipelineLayout::~PipelineLayout()
 {
-    __LOG_TRACE("PipelineLayout: Destroying Pipeline Layout");
-
     if(this->_device != VK_NULL_HANDLE)
     {
+        __LOG_TRACE("PipelineLayout: Destroying Pipeline Layout");
+
         if(this->_layout != VK_NULL_HANDLE)
             vkDestroyPipelineLayout(this->_device, this->_layout, nullptr);
 
@@ -4149,17 +5053,11 @@ inline ShaderStages& ShaderStages::add(const ShaderModule& mod, const char* entr
 //  GraphicsPipeline creation
 // =============================================================================
 
-// TODO: Add some create info struct for more control over this
-
 inline Expected<GraphicsPipeline> create_graphics_pipeline(VkDevice device,
-                                                           const GraphicsPipelineInfo& info,
+                                                           const GraphicsPipeline::CreateInfo& info,
                                                            const ShaderStages& stages,
                                                            const VertexInputState& vertex_input,
-                                                           VkPipelineLayout layout,
-                                                           VkFormat color_format,
-                                                           VkFormat depth_format,
-                                                           const VkPipelineRasterizationStateCreateInfo* rasterization,
-                                                           const VkPipelineMultisampleStateCreateInfo* multisample)
+                                                           VkPipelineLayout layout)
 {
     __LOG_TRACE("Creating a new graphics pipeline");
 
@@ -4183,22 +5081,9 @@ inline Expected<GraphicsPipeline> create_graphics_pipeline(VkDevice device,
     viewport_state.viewportCount = info.viewport_count;
     viewport_state.scissorCount  = info.scissor_count;
 
-    // Rasterization
-    VkPipelineRasterizationStateCreateInfo default_rast{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
-    default_rast.polygonMode = info.polygon_mode;
-    default_rast.cullMode = info.cull_mode;
-    default_rast.frontFace = info.front_face;
-    default_rast.lineWidth = info.line_width;
-    const auto* rast = rasterization ? rasterization : &default_rast;
-
-    // Multisample
-    VkPipelineMultisampleStateCreateInfo default_ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-    default_ms.rasterizationSamples = info.rasterization_samples;
-    const auto* ms = multisample ? multisample : &default_ms;
-
     // Depth/stencil
     VkPipelineDepthStencilStateCreateInfo depth_stencil{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-    if(depth_format != VK_FORMAT_UNDEFINED)
+    if(info.depth_format != VK_FORMAT_UNDEFINED)
     {
         depth_stencil.depthTestEnable = info.depth_test_enable;
         depth_stencil.depthWriteEnable = info.depth_write_enable;
@@ -4222,8 +5107,8 @@ inline Expected<GraphicsPipeline> create_graphics_pipeline(VkDevice device,
     // Dynamic rendering
     VkPipelineRenderingCreateInfo rendering_ci{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
     rendering_ci.colorAttachmentCount = 1;
-    rendering_ci.pColorAttachmentFormats = &color_format;
-    rendering_ci.depthAttachmentFormat = depth_format;
+    rendering_ci.pColorAttachmentFormats = &info.color_format;
+    rendering_ci.depthAttachmentFormat = info.depth_format;
 
     VkGraphicsPipelineCreateInfo create_info{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
     create_info.pNext = &rendering_ci;
@@ -4232,8 +5117,8 @@ inline Expected<GraphicsPipeline> create_graphics_pipeline(VkDevice device,
     create_info.pVertexInputState = &vertex_input_ci;
     create_info.pInputAssemblyState = &input_assembly;
     create_info.pViewportState = &viewport_state;
-    create_info.pRasterizationState = rast;
-    create_info.pMultisampleState = ms;
+    create_info.pRasterizationState = &info.rasterization;
+    create_info.pMultisampleState = &info.multisample;
     create_info.pDepthStencilState = &depth_stencil;
     create_info.pColorBlendState = &color_blend;
     create_info.pDynamicState = &dynamic_state;
@@ -4262,10 +5147,12 @@ inline GraphicsPipeline::GraphicsPipeline()
 
 inline GraphicsPipeline::~GraphicsPipeline()
 {
-    __LOG_DEBUG("Graphic Pipeline: Destroying GraphicsPipeline");
+    if(this->_pipeline != VK_NULL_HANDLE && this->_device != VK_NULL_HANDLE)
+    {
+        __LOG_DEBUG("Graphic Pipeline: Destroying GraphicsPipeline");
 
-    if(this->_pipeline != VK_NULL_HANDLE && _device != VK_NULL_HANDLE)
         vkDestroyPipeline(this->_device, this->_pipeline, nullptr);
+    }
 }
 
 inline GraphicsPipeline::GraphicsPipeline(GraphicsPipeline&& other) noexcept

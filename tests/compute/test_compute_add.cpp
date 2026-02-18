@@ -63,12 +63,8 @@ int main(int argc, char** argv)
 
     // Load the precompiled compute shader (see CMakeLists.txt for compile command with glslc)
     const auto shader_path = std::filesystem::path(__FILE__).parent_path() / "compute_add.comp.spv";
-
-    auto spirv = proserpine::load_spirv_file(shader_path.generic_string().c_str()).value_or(error_exit_callback);
-
-    proserpine::ShaderModule compute_shader = proserpine::ShaderModule::create(ctx.device(),
-                                                                               spirv,
-                                                                               VK_SHADER_STAGE_COMPUTE_BIT).value_or(error_exit_callback);
+    proserpine::ShaderModule compute_shader = proserpine::ShaderModule::create_compute_shader(ctx.device(),
+                                                                                              shader_path.generic_string().c_str()).value_or(error_exit_callback);
 
     // Build the pipeline layout
     proserpine::PipelineLayoutBuilder builder(ctx.device());

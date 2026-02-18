@@ -27,13 +27,15 @@ function(proserpine_add_graphics_test SOURCE)
          ${SHADER_BASE_NAME}*.frag)
 
     foreach(SHADER ${TEST_SHADERS})
-        get_filename_component(SHADER_NAME ${SHADER} NAME_WE)
+        get_filename_component(SHADER_NAME ${SHADER} NAME)
+
+        message(STATUS "Compiling shader ${SHADER_NAME} \"${SHADER}\"")
 
         set(SHADER_SOURCE ${SHADER})
         set(SHADER_BINARY "${SHADER}.spv")
 
         add_custom_command(
-            OUTPUT ${COMP_SHADER_BINARY}
+            OUTPUT ${SHADER_BINARY}
             COMMAND ${GLSLC} ${GLSLC_ARGS} -o ${SHADER_BINARY} ${SHADER_SOURCE}
             COMMENT "Compiling GLSL shader: ${SHADER_SOURCE}"
         )

@@ -4,6 +4,14 @@ rem SPDX-License-Identifier: BSD-3-Clause
 rem Copyright (c) 2026 - Present Romain Augier MIT License
 rem All rights reserved
 
+set CONFIG=RelWithDebInfo
+set RMBUILD=0
+set BUILDDIR=build
+
+for %%x in (%*) do (
+    call :ParseArg %%~x
+)
+
 echo Looking for Renderdoc to append in PATH
 
 set RENDERDOC_INSTALL_DIR=%PROGRAMFILES%\RenderDoc
@@ -19,21 +27,23 @@ if exist %RENDERDOC_INSTALL_DIR% (
     )
 )
 
-if exist build (
-    echo Removing old build directory
-    rem rmdir /s /q build
+if %RMBUILD% equ 1 (
+    if exist %BUILDDIR% (
+        echo Removing old build directory
+        rmdir /s /q %BUILDDIR%
+    )
 )
 
-cmake -S . -B build
+cmake -S . -B %BUILDDIR%
 
 if %ERRORLEVEL% neq 0 (
     echo Error during CMake configuration
     exit /B 1
 )
 
-cd build
+cd %BUILDDIR%
 
-cmake --build . --config RelWithDebInfo
+cmake --build . --config %CONFIG%
 
 if %ERRORLEVEL% neq 0 (
     cd ..
@@ -41,7 +51,7 @@ if %ERRORLEVEL% neq 0 (
     exit /B 1
 )
 
-ctest --output-on-failure -C RelWithDebInfo
+ctest --output-on-failure -C %CONFIG%
 
 if %ERRORLEVEL% neq 0 (
     cd ..
@@ -55,3 +65,11 @@ echo Build and test successful!
 cd ..
 
 exit /B 0
+
+rem ////////////////////////////////////////////////////////////////////////////
+:ParseArg
+
+if "%~1" equ "clean" set RMBUILD=1
+
+exit /B 0
+rem ////////////////////////////////////////////////////////////////////////////
