@@ -368,6 +368,36 @@ private:
     std::variant<T, Error> _data;
 };
 
+template <>
+class Expected<void>
+{
+public:
+    // Default construct as success
+    Expected() : _error(std::nullopt) {}
+    Expected(Error err) : _error(std::move(err)) {}
+
+    explicit operator bool() const { return !this->_error.has_value(); }
+    bool has_value()  const { return !this->_error.has_value(); }
+    bool has_error()  const { return  this->_error.has_value(); }
+
+    const Error& error() const { return *this->_error; }
+
+    // Execute a callback if an error is present
+    const Expected<void>& on_error(std::function<void(const Error&)> lbd) const
+    {
+        if(this->has_error())
+            lbd(*this->_error);
+
+        return *this;
+    }
+
+private:
+    std::optional<Error> _error;
+};
+
+// Convenience Ok()
+inline Expected<void> Ok() { return Expected<void>{}; }
+
 // =============================================================================
 //  Enums
 // =============================================================================
@@ -487,22 +517,11 @@ public:
 
     PROSERPINE_NON_COPYABLE_MOVABLE(SwapChain);
 
+    Expected<void> recreate(std::uint32_t width, std::uint32_t height);
+
     VkResult acquire_next_image(VkSemaphore signal_semaphore,
                                 VkFence signal_fence,
-                                std::uint32_t* image_index)
-    {
-        VkAcquireNextImageInfoKHR info{VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR};
-        info.pNext = nullptr;
-        info.semaphore = signal_semaphore;
-        info.fence = signal_fence;
-        info.swapchain = this->_swapchain;
-        info.timeout = PROSERPINE_WAIT_INFINITE;
-
-        // Modify if multi-gpu usage, for now we just reference the first attached GPU
-        info.deviceMask = 1;
-
-        return vkAcquireNextImage2KHR(this->_device, &info, image_index);
-    }
+                                std::uint32_t* image_index);
 
     inline VkImageView image_view(std::uint32_t index) { return this->_views[index]; }
     inline VkImage image(std::uint32_t index) { return this->_images[index]; }
@@ -520,15 +539,31 @@ public:
     inline const VkSwapchainKHR& handle() const { return this->_swapchain; }
 
 private:
-    SwapChain(VkDevice device, VkSurfaceKHR surface) : _device(device),
-                                                       _surface(surface)
+    SwapChain(VkDevice device,
+              VkPhysicalDevice physical_device,
+              VkSurfaceKHR surface,
+              std::uint32_t graphics_queue_family,
+              std::uint32_t present_queue_family,
+              CreateInfo& info) : _device(device),
+                                  _physical_device(physical_device),
+                                  _surface(surface),
+                                  _graphics_queue_family(graphics_queue_family),
+                                  _present_queue_family(present_queue_family),
+                                  _create_info(info)
     {
         this->_first_use.set();
     }
 
+    Expected<void> create();
+    void destroy();
+
     VkDevice _device = VK_NULL_HANDLE;
+    VkPhysicalDevice _physical_device = VK_NULL_HANDLE;
     VkSurfaceKHR _surface = VK_NULL_HANDLE;
     VkSwapchainKHR _swapchain = VK_NULL_HANDLE;
+
+    std::uint32_t _graphics_queue_family = 0;
+    std::uint32_t _present_queue_family = 0;
 
     std::vector<VkImage> _images;
     std::vector<VkImageView> _views;
@@ -537,6 +572,8 @@ private:
 
     VkFormat _format = VK_FORMAT_UNDEFINED;
     VkExtent2D _extent;
+
+    CreateInfo _create_info;
 };
 
 // =============================================================================
@@ -2459,220 +2496,18 @@ inline Expected<SwapChain> VulkanContext::create_swapchain(SwapChain::CreateInfo
     PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", Error("Invalid Device"));
     PROSERPINE_ASSERT(this->_surface != VK_NULL_HANDLE, "Surface is NULL", Error("Invalid Surface"));
 
-    VkPhysicalDeviceSurfaceInfo2KHR surface_info{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR};
-    surface_info.pNext = nullptr;
-    surface_info.surface = this->_surface;
+    SwapChain sc = SwapChain(this->_device,
+                             this->_physical_device,
+                             this->_surface,
+                             this->queue_family(QueueType::Graphics),
+                             this->queue_family(QueueType::Present),
+                             create_info);
 
-    VkSurfaceCapabilities2KHR capabilities{VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR};
-    capabilities.pNext = nullptr;
+    auto res = sc.create();
 
-    vkGetPhysicalDeviceSurfaceCapabilities2KHR(this->_physical_device,
-                                               &surface_info,
-                                               &capabilities);
-
-    SwapChain sc = SwapChain(this->_device, this->_surface);
-
-    VkColorSpaceKHR color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-    VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
-    std::uint32_t image_count = 0;
-
-    // Present format
-
-    std::uint32_t formats_count;
-
-    vkGetPhysicalDeviceSurfaceFormats2KHR(this->_physical_device,
-                                          &surface_info,
-                                          &formats_count,
-                                          nullptr);
-
-    if(formats_count == 0)
-        return Error("SwapChain: Could not find any available format");
-
-    std::vector<VkSurfaceFormat2KHR> formats(static_cast<std::size_t>(formats_count),
-                                                {VK_STRUCTURE_TYPE_SURFACE_FORMAT_2_KHR});
-
-    vkGetPhysicalDeviceSurfaceFormats2KHR(this->_physical_device,
-                                          &surface_info,
-                                          &formats_count,
-                                          formats.data());
-
-
-    for(const auto& format : formats)
+    if(!res)
     {
-        if(format.surfaceFormat.format == create_info.format &&
-           format.surfaceFormat.colorSpace == create_info.colorspace)
-        {
-            sc._format = format.surfaceFormat.format;
-            color_space = format.surfaceFormat.colorSpace;
-            break;
-        }
-    }
-
-    if(sc._format == VK_FORMAT_UNDEFINED)
-    {
-        sc._format = formats[0].surfaceFormat.format;
-
-        __LOG_WARN("Requested VkFormat " __FMT_I32 " is not available, defaulting to " __FMT_I32,
-                   static_cast<std::int32_t>(create_info.format),
-                   static_cast<std::int32_t>(sc._format));
-    }
-
-    __LOG_TRACE("SwapChain: Format:" __FMT_I32 ", ColorSpace: " __FMT_I32,
-               static_cast<std::int32_t>(sc._format),
-               static_cast<std::int32_t>(color_space));
-
-    // Present Mode
-
-    std::vector<VkPresentModeKHR> present_modes;
-    std::uint32_t present_modes_count;
-
-    vkGetPhysicalDeviceSurfacePresentModesKHR(this->_physical_device,
-                                              this->_surface,
-                                              &present_modes_count,
-                                              nullptr);
-
-    if(present_modes_count == 0)
-        return Error("SwapChain: Could not find any available present mode");
-
-    present_modes.resize(static_cast<std::size_t>(present_modes_count));
-    vkGetPhysicalDeviceSurfacePresentModesKHR(this->_physical_device,
-                                              this->_surface,
-                                              &present_modes_count,
-                                              present_modes.data());
-
-    bool found_present_mode = false;
-
-    for(const auto& mode : present_modes)
-    {
-        if(present_mode == create_info.present_mode)
-        {
-            present_mode = mode;
-            found_present_mode = true;
-        }
-    }
-
-    if(!found_present_mode)
-    {
-        present_mode = VK_PRESENT_MODE_FIFO_KHR;
-
-        __LOG_WARN("Requested present mode " __FMT_I32 " is not available, defaulting to " __FMT_I32,
-                   static_cast<std::int32_t>(create_info.present_mode),
-                   static_cast<std::int32_t>(present_mode));
-    }
-
-    __LOG_TRACE("SwapChain: Present mode: " __FMT_I32,
-                static_cast<std::int32_t>(present_mode));
-
-    // Extent
-
-    if(capabilities.surfaceCapabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max())
-    {
-        sc._extent = capabilities.surfaceCapabilities.currentExtent;
-    }
-    else
-    {
-        sc._extent.width = std::clamp(create_info.extent_width,
-                                      capabilities.surfaceCapabilities.minImageExtent.width,
-                                      capabilities.surfaceCapabilities.maxImageExtent.width);
-        sc._extent.height = std::clamp(create_info.extent_height,
-                                       capabilities.surfaceCapabilities.minImageExtent.height,
-                                       capabilities.surfaceCapabilities.maxImageExtent.height);
-    }
-
-    __LOG_TRACE("SwapChain: Extent: " __FMT_U32 "x" __FMT_U32,
-                sc._extent.width,
-                sc._extent.height);
-
-    // Image count
-
-    image_count = capabilities.surfaceCapabilities.minImageCount + 1;
-
-    if(capabilities.surfaceCapabilities.maxImageCount != 0 &&
-       image_count > capabilities.surfaceCapabilities.maxImageCount)
-        image_count = capabilities.surfaceCapabilities.maxImageCount;
-
-    __LOG_TRACE("SwapChain: Image Count: " __FMT_U32, image_count);
-
-    // SwapChain creation
-
-    VkSwapchainCreateInfoKHR sc_create_info{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
-    sc_create_info.surface = this->_surface;
-    sc_create_info.imageFormat = sc._format;
-    sc_create_info.imageColorSpace = color_space;
-    sc_create_info.imageExtent = sc._extent;
-    sc_create_info.imageArrayLayers = 1;
-    sc_create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    sc_create_info.presentMode = present_mode;
-    sc_create_info.clipped = VK_TRUE;
-    sc_create_info.minImageCount = image_count;
-    sc_create_info.preTransform = capabilities.surfaceCapabilities.currentTransform;
-    sc_create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    sc_create_info.oldSwapchain = VK_NULL_HANDLE;
-
-    std::uint32_t queue_family_indices[2] = {
-        this->_queues[static_cast<std::size_t>(QueueType::Graphics)].family,
-        this->_queues[static_cast<std::size_t>(QueueType::Present)].family
-    };
-
-    if(queue_family_indices[0] != queue_family_indices[1])
-    {
-
-        sc_create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-        sc_create_info.queueFamilyIndexCount = 2;
-        sc_create_info.pQueueFamilyIndices = queue_family_indices;
-    }
-    else
-    {
-        sc_create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        sc_create_info.queueFamilyIndexCount = 0;
-        sc_create_info.pQueueFamilyIndices = nullptr;
-    }
-
-    PROSERPINE_VK_CHECK_VOID(vkCreateSwapchainKHR(this->_device, &sc_create_info, nullptr, &sc._swapchain),
-                             "Failed to create SwapChain");
-
-    // Get swapchain images
-
-    vkGetSwapchainImagesKHR(this->_device, sc._swapchain, &image_count, nullptr);
-    sc._images.resize(static_cast<std::size_t>(image_count));
-    vkGetSwapchainImagesKHR(this->_device, sc._swapchain, &image_count, sc._images.data());
-
-    // Create swapchain image views and render semaphores
-
-    sc._views.resize(static_cast<std::size_t>(image_count));
-    sc._image_rendered_semaphores.resize(static_cast<std::size_t>(image_count));
-
-    for(std::uint32_t i = 0; const auto& image : sc._images)
-    {
-        VkImageViewCreateInfo view_create_info{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-        view_create_info.image = image;
-        view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        view_create_info.format = sc._format;
-        view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        view_create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-        view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        view_create_info.subresourceRange.baseMipLevel = 0;
-        view_create_info.subresourceRange.levelCount = 1;
-        view_create_info.subresourceRange.baseArrayLayer = 0;
-        view_create_info.subresourceRange.layerCount = 1;
-
-        PROSERPINE_VK_CHECK_VOID(vkCreateImageView(this->_device,
-                                                   &view_create_info,
-                                                   nullptr,
-                                                   &sc._views[i]),
-                                 "Failed to create VkImageView");
-
-        VkSemaphoreCreateInfo semaphore_create_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-
-        PROSERPINE_VK_CHECK_VOID(vkCreateSemaphore(this->_device,
-                                                   &semaphore_create_info,
-                                                   nullptr,
-                                                   &sc._image_rendered_semaphores[i]),
-                                 "Failed to create VkSemaphore");
-
-        i++;
+        return res.error();
     }
 
     return sc;
@@ -2788,6 +2623,292 @@ inline Expected<DescriptorSet> VulkanContext::allocate_descriptor_set(VkDescript
 
 inline SwapChain::~SwapChain()
 {
+    this->destroy();
+}
+
+inline SwapChain::SwapChain(SwapChain&& other) noexcept
+{
+    __MOVE_AND_NULL(_device, _physical_device, _surface, _swapchain);
+    __MOVE(_graphics_queue_family, _present_queue_family, _images, _views, _first_use, _image_rendered_semaphores, _format, _extent, _create_info);
+}
+
+inline SwapChain& SwapChain::operator=(SwapChain&& other) noexcept
+{
+    if(this != &other)
+    {
+        __MOVE_AND_NULL(_device, _physical_device, _surface, _swapchain);
+        __MOVE(_graphics_queue_family, _present_queue_family, _images, _views, _first_use, _image_rendered_semaphores, _format, _extent, _create_info);
+    }
+
+    return *this;
+}
+
+inline VkResult SwapChain::acquire_next_image(VkSemaphore signal_semaphore,
+                                              VkFence signal_fence,
+                                              std::uint32_t* image_index)
+{
+    VkAcquireNextImageInfoKHR info{VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR};
+    info.pNext = nullptr;
+    info.semaphore = signal_semaphore;
+    info.fence = signal_fence;
+    info.swapchain = this->_swapchain;
+    info.timeout = PROSERPINE_WAIT_INFINITE;
+
+    // Modify if multi-gpu usage, for now we just reference the first attached GPU
+    info.deviceMask = 1;
+
+    return vkAcquireNextImage2KHR(this->_device, &info, image_index);
+}
+
+inline Expected<void> SwapChain::recreate(std::uint32_t width, std::uint32_t height)
+{
+    __LOG_TRACE("SwapChain: Recreating (" __FMT_U32 ", " __FMT_U32 ")", width, height);
+
+    vkDeviceWaitIdle(this->_device);
+
+    for(auto sem : this->_image_rendered_semaphores)
+        vkDestroySemaphore(this->_device, sem, nullptr);
+
+    this->_image_rendered_semaphores.clear();
+
+    for(auto view : this->_views)
+        vkDestroyImageView(this->_device, view, nullptr);
+
+    this->_views.clear();
+    this->_images.clear();
+
+    this->_create_info.extent_width = width;
+    this->_create_info.extent_height = height;
+
+    return this->create();
+}
+
+inline Expected<void> SwapChain::create()
+{
+    VkPhysicalDeviceSurfaceInfo2KHR surface_info{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR};
+    surface_info.pNext = nullptr;
+    surface_info.surface = this->_surface;
+
+    VkSurfaceCapabilities2KHR capabilities{VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR};
+    capabilities.pNext = nullptr;
+
+    vkGetPhysicalDeviceSurfaceCapabilities2KHR(this->_physical_device,
+                                               &surface_info,
+                                               &capabilities);
+
+    VkColorSpaceKHR color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+    VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
+    std::uint32_t image_count = 0;
+
+    // Present format
+
+    std::uint32_t formats_count;
+
+    vkGetPhysicalDeviceSurfaceFormats2KHR(this->_physical_device,
+                                          &surface_info,
+                                          &formats_count,
+                                          nullptr);
+
+    if(formats_count == 0)
+        return Error("SwapChain: Could not find any available format");
+
+    std::vector<VkSurfaceFormat2KHR> formats(static_cast<std::size_t>(formats_count),
+                                                {VK_STRUCTURE_TYPE_SURFACE_FORMAT_2_KHR});
+
+    vkGetPhysicalDeviceSurfaceFormats2KHR(this->_physical_device,
+                                          &surface_info,
+                                          &formats_count,
+                                          formats.data());
+
+
+    for(const auto& format : formats)
+    {
+        if(format.surfaceFormat.format == this->_create_info.format &&
+           format.surfaceFormat.colorSpace == this->_create_info.colorspace)
+        {
+            this->_format = format.surfaceFormat.format;
+            color_space = format.surfaceFormat.colorSpace;
+            break;
+        }
+    }
+
+    if(this->_format == VK_FORMAT_UNDEFINED)
+    {
+        this->_format = formats[0].surfaceFormat.format;
+
+        __LOG_WARN("Requested VkFormat " __FMT_I32 " is not available, defaulting to " __FMT_I32,
+                   static_cast<std::int32_t>(this->_create_info.format),
+                   static_cast<std::int32_t>(this->_format));
+    }
+
+    __LOG_TRACE("SwapChain: Format:" __FMT_I32 ", ColorSpace: " __FMT_I32,
+                static_cast<std::int32_t>(this->_format),
+                static_cast<std::int32_t>(color_space));
+
+    // Present Mode
+
+    std::vector<VkPresentModeKHR> present_modes;
+    std::uint32_t present_modes_count;
+
+    vkGetPhysicalDeviceSurfacePresentModesKHR(this->_physical_device,
+                                              this->_surface,
+                                              &present_modes_count,
+                                              nullptr);
+
+    if(present_modes_count == 0)
+        return Error("SwapChain: Could not find any available present mode");
+
+    present_modes.resize(static_cast<std::size_t>(present_modes_count));
+    vkGetPhysicalDeviceSurfacePresentModesKHR(this->_physical_device,
+                                              this->_surface,
+                                              &present_modes_count,
+                                              present_modes.data());
+
+    bool found_present_mode = false;
+
+    for(const auto& mode : present_modes)
+    {
+        if(mode == this->_create_info.present_mode)
+        {
+            present_mode = mode;
+            found_present_mode = true;
+        }
+    }
+
+    if(!found_present_mode)
+    {
+        present_mode = VK_PRESENT_MODE_FIFO_KHR;
+
+        __LOG_WARN("Requested present mode " __FMT_I32 " is not available, defaulting to " __FMT_I32,
+                   static_cast<std::int32_t>(this->_create_info.present_mode),
+                   static_cast<std::int32_t>(present_mode));
+    }
+
+    __LOG_TRACE("SwapChain: Present mode: " __FMT_I32,
+                static_cast<std::int32_t>(present_mode));
+
+    // Extent
+
+    if(capabilities.surfaceCapabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max())
+    {
+        this->_extent = capabilities.surfaceCapabilities.currentExtent;
+    }
+    else
+    {
+        this->_extent.width = std::clamp(this->_create_info.extent_width,
+                                         capabilities.surfaceCapabilities.minImageExtent.width,
+                                         capabilities.surfaceCapabilities.maxImageExtent.width);
+        this->_extent.height = std::clamp(this->_create_info.extent_height,
+                                          capabilities.surfaceCapabilities.minImageExtent.height,
+                                          capabilities.surfaceCapabilities.maxImageExtent.height);
+    }
+
+    __LOG_TRACE("SwapChain: Extent: " __FMT_U32 "x" __FMT_U32,
+                this->_extent.width,
+                this->_extent.height);
+
+    // Image count
+
+    image_count = capabilities.surfaceCapabilities.minImageCount + 1;
+
+    if(capabilities.surfaceCapabilities.maxImageCount != 0 &&
+       image_count > capabilities.surfaceCapabilities.maxImageCount)
+        image_count = capabilities.surfaceCapabilities.maxImageCount;
+
+    __LOG_TRACE("SwapChain: Image Count: " __FMT_U32, image_count);
+
+    // SwapChain creation
+
+    VkSwapchainCreateInfoKHR sc_create_info{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
+    sc_create_info.surface = this->_surface;
+    sc_create_info.imageFormat = this->_format;
+    sc_create_info.imageColorSpace = color_space;
+    sc_create_info.imageExtent = this->_extent;
+    sc_create_info.imageArrayLayers = 1;
+    sc_create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    sc_create_info.presentMode = present_mode;
+    sc_create_info.clipped = VK_TRUE;
+    sc_create_info.minImageCount = image_count;
+    sc_create_info.preTransform = capabilities.surfaceCapabilities.currentTransform;
+    sc_create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    sc_create_info.oldSwapchain = this->_swapchain;
+
+    std::uint32_t queue_family_indices[2] = {
+        this->_graphics_queue_family,
+        this->_present_queue_family
+    };
+
+    if(queue_family_indices[0] != queue_family_indices[1])
+    {
+        sc_create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+        sc_create_info.queueFamilyIndexCount = 2;
+        sc_create_info.pQueueFamilyIndices = queue_family_indices;
+    }
+    else
+    {
+        sc_create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        sc_create_info.queueFamilyIndexCount = 0;
+        sc_create_info.pQueueFamilyIndices = nullptr;
+    }
+
+    VkSwapchainKHR new_swapchain = VK_NULL_HANDLE;
+    PROSERPINE_VK_CHECK(vkCreateSwapchainKHR(this->_device, &sc_create_info, nullptr, &new_swapchain),
+                        "SwapChain: Failed to create SwapChain");
+
+    if(this->_swapchain != VK_NULL_HANDLE)
+        vkDestroySwapchainKHR(this->_device, this->_swapchain, nullptr);
+
+    this->_swapchain = new_swapchain;
+
+    // Get swapchain images
+
+    vkGetSwapchainImagesKHR(this->_device, this->_swapchain, &image_count, nullptr);
+    this->_images.resize(static_cast<std::size_t>(image_count));
+    vkGetSwapchainImagesKHR(this->_device, this->_swapchain, &image_count, this->_images.data());
+
+    // Create swapchain image views and render semaphores
+
+    this->_views.resize(static_cast<std::size_t>(image_count));
+    this->_image_rendered_semaphores.resize(static_cast<std::size_t>(image_count));
+
+    for(std::uint32_t i = 0; const auto& image : this->_images)
+    {
+        VkImageViewCreateInfo view_create_info{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        view_create_info.image = image;
+        view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        view_create_info.format = this->_format;
+        view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        view_create_info.subresourceRange.baseMipLevel = 0;
+        view_create_info.subresourceRange.levelCount = 1;
+        view_create_info.subresourceRange.baseArrayLayer = 0;
+        view_create_info.subresourceRange.layerCount = 1;
+
+        PROSERPINE_VK_CHECK(vkCreateImageView(this->_device,
+                                              &view_create_info,
+                                              nullptr,
+                                              &this->_views[i]),
+                            "SwapChain: Failed to create VkImageView");
+
+        VkSemaphoreCreateInfo semaphore_create_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+
+        PROSERPINE_VK_CHECK(vkCreateSemaphore(this->_device,
+                                              &semaphore_create_info,
+                                              nullptr,
+                                              &this->_image_rendered_semaphores[i]),
+                            "SwapChain: Failed to create VkSemaphore");
+
+        i++;
+    }
+
+    return Ok();
+}
+
+inline void SwapChain::destroy()
+{
     if(this->_device != VK_NULL_HANDLE && this->_swapchain != VK_NULL_HANDLE)
     {
         __LOG_TRACE("SwapChain: Destroying");
@@ -2799,31 +2920,16 @@ inline SwapChain::~SwapChain()
         for(auto& view : this->_views)
             vkDestroyImageView(this->_device, view, nullptr);
 
+        this->_views.clear();
+
         for(auto& semaphore : this->_image_rendered_semaphores)
             vkDestroySemaphore(this->_device, semaphore, nullptr);
 
-        this->_views.clear();
+        this->_image_rendered_semaphores.clear();
 
         this->_device = VK_NULL_HANDLE;
         this->_swapchain = VK_NULL_HANDLE;
     }
-}
-
-inline SwapChain::SwapChain(SwapChain&& other) noexcept
-{
-    __MOVE_AND_NULL(_device, _surface, _swapchain);
-    __MOVE(_images, _views, _first_use, _image_rendered_semaphores, _format, _extent);
-}
-
-inline SwapChain& SwapChain::operator=(SwapChain&& other) noexcept
-{
-    if(this != &other)
-    {
-        __MOVE_AND_NULL(_device, _surface, _swapchain);
-        __MOVE(_images, _views, _first_use, _image_rendered_semaphores, _format, _extent);
-    }
-
-    return *this;
 }
 
 // ============================================================================

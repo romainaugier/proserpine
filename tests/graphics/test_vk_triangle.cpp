@@ -51,7 +51,7 @@ int main(int argc, char** argv)
     }
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
     GLFWwindow* window = glfwCreateWindow(800, 600, "vk_triangle", nullptr, nullptr);
 
@@ -151,9 +151,28 @@ int main(int argc, char** argv)
                                                     VK_NULL_HANDLE,
                                                     &swapchain_image_index);
 
+        // Window resize
         if(res == VK_ERROR_OUT_OF_DATE_KHR)
         {
             PROSERPINE_LOG_DEBUG("Need to recreate swapchain");
+
+            std::int32_t width, height;
+            glfwGetFramebufferSize(window, &width, &height);
+
+            auto ok = swapchain.recreate(static_cast<std::uint32_t>(width),
+                                         static_cast<std::uint32_t>(height));
+
+            if(!ok)
+            {
+                PROSERPINE_LOG_ERROR("Error during swapchain recreation: " __FMT_STR " (" __FMT_I32 ")",
+                                     ok.error().message.c_str(),
+                                     ok.error().result);
+                break;
+            }
+
+            depth_image = ctx.create_depth_image(swapchain.extent()).value_or(error_exit_callback);
+
+            continue;
         }
         else if(res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR)
         {
@@ -240,9 +259,28 @@ int main(int argc, char** argv)
 
         VkResult result = ctx.present(present_info);
 
+        // Window resize
         if(result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
         {
             PROSERPINE_LOG_DEBUG("Need to recreate swapchain");
+
+            std::int32_t width, height;
+            glfwGetFramebufferSize(window, &width, &height);
+
+            auto ok = swapchain.recreate(static_cast<std::uint32_t>(width),
+                                         static_cast<std::uint32_t>(height));
+
+            if(!ok)
+            {
+                PROSERPINE_LOG_ERROR("Error during swapchain recreation: " __FMT_STR " (" __FMT_I32 ")",
+                                     ok.error().message.c_str(),
+                                     ok.error().result);
+                break;
+            }
+
+            depth_image = ctx.create_depth_image(swapchain.extent()).value_or(error_exit_callback);
+
+            continue;
         }
         else if(result != VK_SUCCESS)
         {
