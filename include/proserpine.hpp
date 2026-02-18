@@ -1161,7 +1161,7 @@ private:
 class PipelineLayout
 {
 public:
-    PipelineLayout();
+    PipelineLayout() = default;
     ~PipelineLayout();
 
     PROSERPINE_NON_COPYABLE_MOVABLE(PipelineLayout);
@@ -1268,7 +1268,7 @@ public:
     };
 
 public:
-    GraphicsPipeline();
+    GraphicsPipeline() = default;
     ~GraphicsPipeline();
 
     PROSERPINE_NON_COPYABLE_MOVABLE(GraphicsPipeline);
@@ -1290,7 +1290,7 @@ private:
 class ComputePipeline
 {
 public:
-    ComputePipeline();
+    ComputePipeline() = default;
     ~ComputePipeline();
 
     PROSERPINE_NON_COPYABLE_MOVABLE(ComputePipeline);
@@ -4982,11 +4982,6 @@ inline Expected<PipelineLayout> PipelineLayoutBuilder::build()
 //  PipelineLayout destructor / move
 // =============================================================================
 
-inline PipelineLayout::PipelineLayout()
-{
-    __LOG_TRACE("PipelineLayout: Initializing Pipeline Layout");
-}
-
 inline PipelineLayout::~PipelineLayout()
 {
     if(this->_device != VK_NULL_HANDLE)
@@ -5035,7 +5030,7 @@ inline PipelineLayout& PipelineLayout::operator=(PipelineLayout&& other) noexcep
 
 inline ShaderStages& ShaderStages::add(const ShaderModule& mod, const char* entry)
 {
-    __LOG_TRACE("Adding a new ShaderStage entry: " __FMT_STR " (" __FMT_U64H ")",
+    __LOG_TRACE("ShaderStages: Adding a new entry: " __FMT_STR " (" __FMT_U64H ")",
                 entry,
                 reinterpret_cast<std::uint64_t>(mod.handle()));
 
@@ -5059,7 +5054,7 @@ inline Expected<GraphicsPipeline> create_graphics_pipeline(VkDevice device,
                                                            const VertexInputState& vertex_input,
                                                            VkPipelineLayout layout)
 {
-    __LOG_TRACE("Creating a new graphics pipeline");
+    __LOG_TRACE("GraphicsPipeline: Creating a new graphics pipeline");
 
     GraphicsPipeline gp;
     gp._device = device;
@@ -5071,23 +5066,36 @@ inline Expected<GraphicsPipeline> create_graphics_pipeline(VkDevice device,
     vertex_input_ci.vertexAttributeDescriptionCount = static_cast<std::uint32_t>(vertex_input.attributes.size());
     vertex_input_ci.pVertexAttributeDescriptions = vertex_input.attributes.data();
 
+    __LOG_TRACE("GraphicsPipeline: " __FMT_U32 " vertex bindings, " __FMT_U32 " vertex attributes",
+                static_cast<std::uint32_t>(vertex_input.bindings.size()),
+                static_cast<std::uint32_t>(vertex_input.attributes.size()));
+
     // Input assembly
     VkPipelineInputAssemblyStateCreateInfo input_assembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
     input_assembly.topology = info.topology;
     input_assembly.primitiveRestartEnable = info.primitive_restart_enable;
+
+    __LOG_TRACE("GraphicsPipeline: input assembly topology: " __FMT_U32 "", info.topology);
 
     // Viewport / scissor (dynamic)
     VkPipelineViewportStateCreateInfo viewport_state{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
     viewport_state.viewportCount = info.viewport_count;
     viewport_state.scissorCount  = info.scissor_count;
 
+    __LOG_TRACE("GraphicsPipeline: " __FMT_U32 " viewport(s), " __FMT_U32 " scissor(s)",
+                info.viewport_count,
+                info.scissor_count);
+
     // Depth/stencil
     VkPipelineDepthStencilStateCreateInfo depth_stencil{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+
     if(info.depth_format != VK_FORMAT_UNDEFINED)
     {
         depth_stencil.depthTestEnable = info.depth_test_enable;
         depth_stencil.depthWriteEnable = info.depth_write_enable;
         depth_stencil.depthCompareOp = info.depth_compare_op;
+
+        __LOG_TRACE("GraphicsPipeline: enabling depth testing");
     }
 
     // Color blend
@@ -5129,20 +5137,15 @@ inline Expected<GraphicsPipeline> create_graphics_pipeline(VkDevice device,
 
     if(result != VK_SUCCESS)
     {
-        __LOG_ERROR("Failed to create a new graphics pipeline (" __FMT_I32 "",
+        __LOG_ERROR("GraphicsPipeline: Failed to create a new graphics pipeline (" __FMT_I32 ")",
                     static_cast<std::int32_t>(result));
 
         return Error(result, "Failed to create graphics pipeline");
     }
 
-    __LOG_TRACE("Created a new graphics pipeline");
+    __LOG_TRACE("GraphicsPipeline: Created a new graphics pipeline");
 
     return gp;
-}
-
-inline GraphicsPipeline::GraphicsPipeline()
-{
-    __LOG_DEBUG("Graphic Pipeline: Initializing GraphicsPipeline");
 }
 
 inline GraphicsPipeline::~GraphicsPipeline()
@@ -5182,7 +5185,7 @@ inline Expected<ComputePipeline> create_compute_pipeline(VkDevice device,
                                                          VkPipelineLayout layout,
                                                          const char* entry)
 {
-    __LOG_TRACE("Creating a new compute pipeline");
+    __LOG_TRACE("ComputePipeline: Creating a new compute pipeline");
 
     ComputePipeline cp;
     cp._device = device;
@@ -5200,20 +5203,15 @@ inline Expected<ComputePipeline> create_compute_pipeline(VkDevice device,
 
     if(result != VK_SUCCESS)
     {
-        __LOG_ERROR("Failed to create a new compute pipeline (" __FMT_I32 ")",
+        __LOG_ERROR("ComputePipeline: Failed to create a new compute pipeline (" __FMT_I32 ")",
                     static_cast<std::int32_t>(result));
 
         return Error(result, "Failed to create compute pipeline");
     }
 
-    __LOG_TRACE("Created a new compute pipeline");
+    __LOG_TRACE("ComputePipeline: Created a new compute pipeline");
 
     return cp;
-}
-
-inline ComputePipeline::ComputePipeline()
-{
-    __LOG_TRACE("ComputePipeline: Initializing ComputePipeline");
 }
 
 inline ComputePipeline::~ComputePipeline()
