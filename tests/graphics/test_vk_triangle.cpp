@@ -9,7 +9,6 @@
 #include "logger.hpp"
 
 #define PROSERPINE_INCLUDE_VULKAN
-#define PROSERPINE_IMPLEMENTATION
 #include "proserpine.hpp"
 
 #include "testing.hpp"

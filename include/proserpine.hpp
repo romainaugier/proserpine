@@ -19,6 +19,18 @@
 #define __PROSERPINE
 
 // =============================================================================
+// Configuration
+// =============================================================================
+
+// To remove "inline" qualifier in front of functions definitions when compiling
+// proserpine as a static library
+#if defined(PROSERPINE_AS_STATIC_LIB)
+#define PROSERPINE_INLINE
+#else
+#define PROSERPINE_INLINE inline
+#endif // defined(PROSERPINE_AS_STATIC_LIB)
+
+// =============================================================================
 // Logging
 // =============================================================================
 
@@ -105,6 +117,9 @@
 // =============================================================================
 //  Utilities
 // =============================================================================
+
+// Disable formatting for macros
+// clang-format off
 
 // In debug mode, assertions will abort, and in Release only return an error value
 // depending on the calling context. It makes error checking easier
@@ -255,6 +270,8 @@ __PP_HAS_COMMA(___PP_TRIGGER_PARENTHESIS_ __VA_ARGS__ (/* empty */)) \
 #define __MEMCPY_AND_ZERO(...) __PP_FOR_EACH(__DETAIL_MEMCPY_AND_ZERO, __VA_ARGS__)
 #define __MEMCPY(...) __PP_FOR_EACH(__DETAIL_MEMCPY, __VA_ARGS__)
 
+// clang-format on
+
 // =============================================================================
 //  Required headers
 // =============================================================================
@@ -268,8 +285,8 @@ __PP_HAS_COMMA(___PP_TRIGGER_PARENTHESIS_ __VA_ARGS__ (/* empty */)) \
 #include <atomic>
 #include <bitset>
 #include <condition_variable>
-#include <cstring>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <format>
 #include <functional>
@@ -297,7 +314,8 @@ __PP_HAS_COMMA(___PP_TRIGGER_PARENTHESIS_ __VA_ARGS__ (/* empty */)) \
 #error "[proserpine] : Unsupported platform"
 #endif // defined(_WIN32)
 
-namespace proserpine {
+namespace proserpine
+{
 
 // ============================================================================
 //  Forward declarations
@@ -313,7 +331,8 @@ class TimelineSemaphore;
 class TimelineCallbackSystem;
 class RenderDocIntegration;
 class StagingBufferManager;
-template<std::size_t N> class FrameManager;
+template <std::size_t N>
+class FrameManager;
 class DescriptorPool;
 class DescriptorSet;
 class CommandPool;
@@ -334,8 +353,16 @@ struct Error
     std::string message;
 
     Error() = default;
-    Error(VkResult r, std::string msg) : result(r), message(std::move(msg)) {}
-    explicit Error(std::string msg) : result(VK_ERROR_UNKNOWN), message(std::move(msg)) {}
+    Error(VkResult r, std::string msg)
+        : result(r),
+          message(std::move(msg))
+    {
+    }
+    explicit Error(std::string msg)
+        : result(VK_ERROR_UNKNOWN),
+          message(std::move(msg))
+    {
+    }
 };
 
 // Rust's Result-like struct to handle error easily
@@ -343,17 +370,38 @@ template <typename T>
 class Expected
 {
 public:
-    Expected(T value) : _data(std::move(value)) {}
-    Expected(Error err) : _data(std::move(err)) {}
+    Expected(T value)
+        : _data(std::move(value))
+    {
+    }
+    Expected(Error err)
+        : _data(std::move(err))
+    {
+    }
 
-    explicit operator bool() const { return std::holds_alternative<T>(this->_data); }
-    bool has_value() const { return std::holds_alternative<T>(this->_data); }
+    explicit operator bool() const
+    {
+        return std::holds_alternative<T>(this->_data);
+    }
+    bool has_value() const
+    {
+        return std::holds_alternative<T>(this->_data);
+    }
 
-    bool has_error() const { return std::holds_alternative<Error>(this->_data); }
+    bool has_error() const
+    {
+        return std::holds_alternative<Error>(this->_data);
+    }
 
-    inline T value() { return std::move(std::get<T>(this->_data)); }
+    inline T value()
+    {
+        return std::move(std::get<T>(this->_data));
+    }
 
-    inline const T& value() const { return std::get<T>(this->_data); }
+    inline const T& value() const
+    {
+        return std::get<T>(this->_data);
+    }
 
     inline T value_or(std::function<void(const Error&)> lbd)
     {
@@ -363,7 +411,10 @@ public:
         return std::move(std::get<T>(this->_data));
     }
 
-    const Error& error() const { return std::get<Error>(this->_data); }
+    const Error& error() const
+    {
+        return std::get<Error>(this->_data);
+    }
 
 private:
     std::variant<T, Error> _data;
@@ -374,14 +425,32 @@ class Expected<void>
 {
 public:
     // Default construct as success
-    Expected() : _error(std::nullopt) {}
-    Expected(Error err) : _error(std::move(err)) {}
+    Expected()
+        : _error(std::nullopt)
+    {
+    }
+    Expected(Error err)
+        : _error(std::move(err))
+    {
+    }
 
-    explicit operator bool() const { return !this->_error.has_value(); }
-    bool has_value()  const { return !this->_error.has_value(); }
-    bool has_error()  const { return  this->_error.has_value(); }
+    explicit operator bool() const
+    {
+        return !this->_error.has_value();
+    }
+    bool has_value() const
+    {
+        return !this->_error.has_value();
+    }
+    bool has_error() const
+    {
+        return this->_error.has_value();
+    }
 
-    const Error& error() const { return *this->_error; }
+    const Error& error() const
+    {
+        return *this->_error;
+    }
 
     // Execute a callback if an error is present
     const Expected<void>& on_error(std::function<void(const Error&)> lbd) const
@@ -397,13 +466,17 @@ private:
 };
 
 // Convenience Ok()
-inline Expected<void> Ok() { return Expected<void>{}; }
+inline Expected<void> Ok()
+{
+    return Expected<void>{};
+}
 
 // =============================================================================
 //  Enums
 // =============================================================================
 
-enum class QueueType : std::uint8_t {
+enum class QueueType : std::uint8_t
+{
     Graphics,
     Compute,
     Transfer,
@@ -412,7 +485,8 @@ enum class QueueType : std::uint8_t {
     Count,
 };
 
-enum class Feature : std::uint8_t {
+enum class Feature : std::uint8_t
+{
     TimelineSemaphore,
     BufferDeviceAddress,
     DescriptorIndexing,
@@ -434,10 +508,10 @@ struct DeviceProperties
 {
     VkPhysicalDeviceProperties properties{};
     VkPhysicalDeviceFeatures features{};
-    VkPhysicalDeviceVulkan11Features features_11{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
-    VkPhysicalDeviceVulkan12Features features_12{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
-    VkPhysicalDeviceVulkan13Features features_13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
-    VkPhysicalDeviceVulkan14Features features_14{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES };
+    VkPhysicalDeviceVulkan11Features features_11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
+    VkPhysicalDeviceVulkan12Features features_12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    VkPhysicalDeviceVulkan13Features features_13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+    VkPhysicalDeviceVulkan14Features features_14{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES};
     VkPhysicalDeviceMemoryProperties memory_properties{};
     std::vector<VkQueueFamilyProperties> queue_families;
     std::vector<VkExtensionProperties> available_extensions;
@@ -448,7 +522,7 @@ struct SelectedDevice
     VkPhysicalDevice physical_device = VK_NULL_HANDLE;
     DeviceProperties props;
     std::uint32_t queue_family_indices[static_cast<std::size_t>(QueueType::Count)] = {};
-    bool queue_family_valid[static_cast<std::size_t>(QueueType::Count)]   = {};
+    bool queue_family_valid[static_cast<std::size_t>(QueueType::Count)] = {};
 };
 
 // ============================================================================
@@ -459,7 +533,7 @@ struct DeviceFilter
 {
     std::uint32_t min_api_version = VK_API_VERSION_1_4;
 
-    bool require_separate_compute_queue  = false;
+    bool require_separate_compute_queue = false;
     bool require_separate_transfer_queue = false;
 
     std::vector<const char*> required_extensions;
@@ -479,7 +553,7 @@ struct FeaturesRequested
     bool surface = false;
 
     bool timeline_semaphore = true;
-    bool buffer_device_address  = true;
+    bool buffer_device_address = true;
     bool descriptor_indexing = true;
     bool synchronization2 = true;
     bool dynamic_rendering = true;
@@ -503,7 +577,8 @@ class SwapChain
     friend class VulkanContext;
 
 public:
-    struct CreateInfo {
+    struct CreateInfo
+    {
         VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
         VkColorSpaceKHR colorspace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 
@@ -520,24 +595,49 @@ public:
 
     Expected<void> recreate(std::uint32_t width, std::uint32_t height);
 
-    VkResult acquire_next_image(VkSemaphore signal_semaphore,
-                                VkFence signal_fence,
-                                std::uint32_t* image_index);
+    VkResult acquire_next_image(VkSemaphore signal_semaphore, VkFence signal_fence, std::uint32_t* image_index);
 
-    inline VkImageView image_view(std::uint32_t index) { return this->_views[index]; }
-    inline VkImage image(std::uint32_t index) { return this->_images[index]; }
-    inline std::size_t image_count() const { return this->_images.size(); }
+    inline VkImageView image_view(std::uint32_t index)
+    {
+        return this->_views[index];
+    }
+    inline VkImage image(std::uint32_t index)
+    {
+        return this->_images[index];
+    }
+    inline std::size_t image_count() const
+    {
+        return this->_images.size();
+    }
 
-    inline bool image_first_use(std::uint32_t index) const { return this->_first_use[index]; }
-    inline void image_first_use_set(std::uint32_t index) { this->_first_use[index] = 0; }
+    inline bool image_first_use(std::uint32_t index) const
+    {
+        return this->_first_use[index];
+    }
+    inline void image_first_use_set(std::uint32_t index)
+    {
+        this->_first_use[index] = 0;
+    }
 
-    inline VkSemaphore image_rendered_semaphore(std::uint32_t index) const { return this->_image_rendered_semaphores[index]; }
+    inline VkSemaphore image_rendered_semaphore(std::uint32_t index) const
+    {
+        return this->_image_rendered_semaphores[index];
+    }
 
-    const VkExtent2D& extent() const { return this->_extent; }
+    const VkExtent2D& extent() const
+    {
+        return this->_extent;
+    }
 
-    VkFormat format() const { return this->_format; }
+    VkFormat format() const
+    {
+        return this->_format;
+    }
 
-    inline const VkSwapchainKHR& handle() const { return this->_swapchain; }
+    inline const VkSwapchainKHR& handle() const
+    {
+        return this->_swapchain;
+    }
 
 private:
     SwapChain(VkDevice device,
@@ -545,12 +645,13 @@ private:
               VkSurfaceKHR surface,
               std::uint32_t graphics_queue_family,
               std::uint32_t present_queue_family,
-              CreateInfo& info) : _device(device),
-                                  _physical_device(physical_device),
-                                  _surface(surface),
-                                  _graphics_queue_family(graphics_queue_family),
-                                  _present_queue_family(present_queue_family),
-                                  _create_info(info)
+              CreateInfo& info)
+        : _device(device),
+          _physical_device(physical_device),
+          _surface(surface),
+          _graphics_queue_family(graphics_queue_family),
+          _present_queue_family(present_queue_family),
+          _create_info(info)
     {
         this->_first_use.set();
     }
@@ -591,7 +692,10 @@ public:
 
     PROSERPINE_NON_COPYABLE_MOVABLE(Fence);
 
-    inline VkFence handle() const { return this->_fence; }
+    inline VkFence handle() const
+    {
+        return this->_fence;
+    }
 
     inline VkResult wait(std::uint64_t timeout_ns = PROSERPINE_WAIT_INFINITE)
     {
@@ -623,12 +727,17 @@ public:
 
     PROSERPINE_NON_COPYABLE_MOVABLE(TimelineSemaphore);
 
-    inline VkSemaphore handle() const { return this->_sema; }
-    inline operator VkSemaphore() const { return this->_sema; }
+    inline VkSemaphore handle() const
+    {
+        return this->_sema;
+    }
+    inline operator VkSemaphore() const
+    {
+        return this->_sema;
+    }
 
     void signal(std::uint64_t value);
-    VkResult wait(std::uint64_t value,
-                  std::uint64_t timeout_ns = PROSERPINE_WAIT_INFINITE);
+    VkResult wait(std::uint64_t value, std::uint64_t timeout_ns = PROSERPINE_WAIT_INFINITE);
     std::uint64_t counter() const;
 
 private:
@@ -643,13 +752,17 @@ private:
 class Semaphore
 {
     friend class VulkanContext;
+
 public:
     Semaphore() = default;
     ~Semaphore();
 
     PROSERPINE_NON_COPYABLE_MOVABLE(Semaphore);
 
-    inline VkSemaphore handle() const { return this->_sema; }
+    inline VkSemaphore handle() const
+    {
+        return this->_sema;
+    }
 
 private:
     Semaphore(VkDevice device);
@@ -670,9 +783,7 @@ public:
 
     PROSERPINE_NON_COPYABLE(TimelineCallbackSystem);
 
-    void enqueue(VkSemaphore semaphore,
-                 std::uint64_t wait_value,
-                 std::function<void()> callback);
+    void enqueue(VkSemaphore semaphore, std::uint64_t wait_value, std::function<void()> callback);
     void cancel(VkSemaphore semaphore);
     void shutdown();
 
@@ -703,13 +814,16 @@ class RenderDocIntegration
 public:
     RenderDocIntegration();
 
-    inline bool is_available() const noexcept { return this->_api != nullptr; }
+    inline bool is_available() const noexcept
+    {
+        return this->_api != nullptr;
+    }
 
     void start_capture();
     void end_capture();
 
 private:
-    void* _api  = nullptr; // RENDERDOC_API_1_6_0*
+    void* _api = nullptr; // RENDERDOC_API_1_6_0*
     void* _module = nullptr;
 };
 
@@ -730,21 +844,37 @@ public:
 
 public:
     Buffer() = default;
-    Buffer(VkDevice device,
-           VkPhysicalDevice physical_device,
-           const Buffer::CreateInfo& info);
+    Buffer(VkDevice device, VkPhysicalDevice physical_device, const Buffer::CreateInfo& info);
     ~Buffer();
 
     PROSERPINE_NON_COPYABLE_MOVABLE(Buffer);
 
-    inline VkBuffer handle() const { return this->_buffer; }
-    inline VkDeviceMemory memory() const { return this->_memory; }
-    inline VkDeviceSize size() const { return this->_size; }
-    inline VkDeviceAddress device_address() const { return this->_device_address; }
+    inline VkBuffer handle() const
+    {
+        return this->_buffer;
+    }
+    inline VkDeviceMemory memory() const
+    {
+        return this->_memory;
+    }
+    inline VkDeviceSize size() const
+    {
+        return this->_size;
+    }
+    inline VkDeviceAddress device_address() const
+    {
+        return this->_device_address;
+    }
 
-    inline void* mapped_ptr() const { return this->_mapped; }
+    inline void* mapped_ptr() const
+    {
+        return this->_mapped;
+    }
 
-    inline operator VkBuffer() const { return this->_buffer; }
+    inline operator VkBuffer() const
+    {
+        return this->_buffer;
+    }
 
 private:
     VkDevice _device = VK_NULL_HANDLE;
@@ -780,20 +910,36 @@ public:
 
 public:
     Image() = default;
-    Image(VkDevice device,
-          VkPhysicalDevice physical_device,
-          const Image::CreateInfo& info);
+    Image(VkDevice device, VkPhysicalDevice physical_device, const Image::CreateInfo& info);
     ~Image();
 
     PROSERPINE_NON_COPYABLE_MOVABLE(Image);
 
-    inline VkImage handle() const { return this->_image; }
-    inline VkImageView view() const { return this->_view; }
-    inline VkDeviceMemory memory() const { return this->_memory; }
-    inline VkFormat format() const { return this->_format; }
-    inline VkExtent3D extent() const { return this->_extent; }
+    inline VkImage handle() const
+    {
+        return this->_image;
+    }
+    inline VkImageView view() const
+    {
+        return this->_view;
+    }
+    inline VkDeviceMemory memory() const
+    {
+        return this->_memory;
+    }
+    inline VkFormat format() const
+    {
+        return this->_format;
+    }
+    inline VkExtent3D extent() const
+    {
+        return this->_extent;
+    }
 
-    inline operator VkImage() const { return this->_image; }
+    inline operator VkImage() const
+    {
+        return this->_image;
+    }
 
 private:
     VkDevice _device = VK_NULL_HANDLE;
@@ -824,10 +970,7 @@ public:
 
     PROSERPINE_NON_COPYABLE_MOVABLE(StagingBufferManager);
 
-    void upload_to_buffer(const void* data,
-                          VkDeviceSize size,
-                          VkBuffer dst,
-                          VkDeviceSize dst_offset = 0);
+    void upload_to_buffer(const void* data, VkDeviceSize size, VkBuffer dst, VkDeviceSize dst_offset = 0);
     void upload_to_image(const void* data,
                          const VkExtent3D& extent,
                          VkFormat format,
@@ -879,14 +1022,16 @@ public:
 
 public:
     DescriptorPool();
-    DescriptorPool(VkDevice device,
-                   DescriptorPool::CreateInfo& create_info);
+    DescriptorPool(VkDevice device, DescriptorPool::CreateInfo& create_info);
 
     ~DescriptorPool();
 
     PROSERPINE_NON_COPYABLE_MOVABLE(DescriptorPool);
 
-    inline VkDescriptorPool pool() const { return this->_pool; }
+    inline VkDescriptorPool pool() const
+    {
+        return this->_pool;
+    }
 
     Expected<DescriptorSet> allocate_descriptor_set(VkDescriptorSetLayout layout);
 
@@ -908,7 +1053,10 @@ public:
 
     PROSERPINE_NON_COPYABLE_MOVABLE(DescriptorSet);
 
-    inline const VkDescriptorSet& handle() const { return this->_set; }
+    inline const VkDescriptorSet& handle() const
+    {
+        return this->_set;
+    }
 
     // TODO: make function per descriptor type instead of asking the user to
     // choose the type each time, cleaner
@@ -929,8 +1077,11 @@ public:
     DescriptorSet& update();
 
 private:
-    DescriptorSet(VkDevice device, VkDescriptorSet set) : _device(device),
-                                                          _set(set) {}
+    DescriptorSet(VkDevice device, VkDescriptorSet set)
+        : _device(device),
+          _set(set)
+    {
+    }
 
     struct PendingWrite
     {
@@ -1008,17 +1159,17 @@ public:
                       float min_depth = 0.0f,
                       float max_depth = 1.0f);
 
-    void set_scissor(std::uint32_t width,
-                     std::uint32_t height,
-                     std::int32_t offset_x = 0,
-                     std::int32_t offset_y = 0);
+    void set_scissor(std::uint32_t width, std::uint32_t height, std::int32_t offset_x = 0, std::int32_t offset_y = 0);
 
     void draw(std::uint32_t vertex_count,
               std::uint32_t instance_count,
               std::uint32_t first_vertex,
               std::uint32_t first_instance);
 
-    inline VkCommandBuffer handle() const { return this->_buffer; }
+    inline VkCommandBuffer handle() const
+    {
+        return this->_buffer;
+    }
 
 private:
     enum class State
@@ -1065,7 +1216,10 @@ public:
 private:
     CommandPool(VkDevice device, std::uint32_t queue_family_index);
 
-    bool ready() const { return this->_pool != VK_NULL_HANDLE; }
+    bool ready() const
+    {
+        return this->_pool != VK_NULL_HANDLE;
+    }
 
     VkDevice _device = VK_NULL_HANDLE;
     VkCommandPool _pool = VK_NULL_HANDLE;
@@ -1087,6 +1241,7 @@ public:
     };
 
     static constexpr double INVALID_MEASURE = std::numeric_limits<double>::max();
+
 public:
     CommandProfiler(VkDevice device, VkPhysicalDevice physical_device);
 
@@ -1113,7 +1268,7 @@ private:
 //  FrameManager
 // =============================================================================
 
-template<std::size_t N = 2>
+template <std::size_t N = 2>
 class FrameManager
 {
     friend class VulkanContext;
@@ -1149,18 +1304,26 @@ public:
         frame.command_pool.reset();
         frame.command_buffer.reset();
 
-        return FrameContext{
-            &frame.command_buffer,
-            frame.image_available_semaphore.handle(),
-            this->_current_frame
-        };
+        return FrameContext{&frame.command_buffer, frame.image_available_semaphore.handle(), this->_current_frame};
     }
 
-    inline void end_frame() { this->_current_frame = (this->_current_frame + 1) % N; }
+    inline void end_frame()
+    {
+        this->_current_frame = (this->_current_frame + 1) % N;
+    }
 
-    VkFence current_fence() const { return this->_frames[this->_current_frame].in_flight_fence.handle(); }
-    std::uint32_t current_frame_index() const { return this->_current_frame; }
-    std::uint32_t frames_in_flight() const { return N; }
+    VkFence current_fence() const
+    {
+        return this->_frames[this->_current_frame].in_flight_fence.handle();
+    }
+    std::uint32_t current_frame_index() const
+    {
+        return this->_current_frame;
+    }
+    std::uint32_t frames_in_flight() const
+    {
+        return N;
+    }
 
 private:
     struct FrameData
@@ -1225,22 +1388,37 @@ public:
 
     PROSERPINE_NON_COPYABLE_MOVABLE(ShaderModule);
 
-    static Expected<ShaderModule> create_compute_shader(VkDevice device,
-                                                        const char* path);
+    static Expected<ShaderModule> create_compute_shader(VkDevice device, const char* path);
 
-    static Expected<ShaderModule> create_vertex_shader(VkDevice device,
-                                                       const char* path);
+    static Expected<ShaderModule> create_vertex_shader(VkDevice device, const char* path);
 
-    static Expected<ShaderModule> create_fragment_shader(VkDevice device,
-                                                         const char* path);
+    static Expected<ShaderModule> create_fragment_shader(VkDevice device, const char* path);
 
-    inline VkShaderModule handle() const { return this->_module; }
-    inline VkShaderStageFlagBits stage() const { return this->_stage; }
-    inline operator VkShaderModule() const { return this->_module; }
+    inline VkShaderModule handle() const
+    {
+        return this->_module;
+    }
+    inline VkShaderStageFlagBits stage() const
+    {
+        return this->_stage;
+    }
+    inline operator VkShaderModule() const
+    {
+        return this->_module;
+    }
 
-    inline const std::vector<DescriptorSetLayoutInfo>& descriptor_set_layouts() const { return this->_set_layouts; }
-    inline const std::vector<PushConstantRange>& push_constant_ranges() const { return this->_push_ranges; }
-    inline const std::vector<VertexInputAttribute>& vertex_inputs() const { return this->_vertex_inputs; }
+    inline const std::vector<DescriptorSetLayoutInfo>& descriptor_set_layouts() const
+    {
+        return this->_set_layouts;
+    }
+    inline const std::vector<PushConstantRange>& push_constant_ranges() const
+    {
+        return this->_push_ranges;
+    }
+    inline const std::vector<VertexInputAttribute>& vertex_inputs() const
+    {
+        return this->_vertex_inputs;
+    }
 
 private:
     VkDevice _device = VK_NULL_HANDLE;
@@ -1270,10 +1448,19 @@ public:
 
     PROSERPINE_NON_COPYABLE_MOVABLE(PipelineLayout);
 
-    inline VkPipelineLayout handle() const { return this->_layout; }
-    inline operator VkPipelineLayout() const { return this->_layout; }
+    inline VkPipelineLayout handle() const
+    {
+        return this->_layout;
+    }
+    inline operator VkPipelineLayout() const
+    {
+        return this->_layout;
+    }
 
-    inline const std::vector<VkDescriptorSetLayout>& set_layouts() const { return this->_set_layouts; }
+    inline const std::vector<VkDescriptorSetLayout>& set_layouts() const
+    {
+        return this->_set_layouts;
+    }
 
 private:
     VkDevice _device = VK_NULL_HANDLE;
@@ -1290,16 +1477,14 @@ private:
 class PipelineLayoutBuilder
 {
 public:
-    explicit PipelineLayoutBuilder(VkDevice device) : _device(device)
+    explicit PipelineLayoutBuilder(VkDevice device)
+        : _device(device)
     {
         __LOG_TRACE("PipelineLayoutBuilder : Initializing PipelineLayoutBuilder");
     }
 
-    PipelineLayoutBuilder& add_set(std::uint32_t set,
-                                   const DescriptorSetLayoutInfo& info);
-    PipelineLayoutBuilder& add_push_constant_range(VkShaderStageFlags stages,
-                                                   std::uint32_t offset,
-                                                   std::uint32_t size);
+    PipelineLayoutBuilder& add_set(std::uint32_t set, const DescriptorSetLayoutInfo& info);
+    PipelineLayoutBuilder& add_push_constant_range(VkShaderStageFlags stages, std::uint32_t offset, std::uint32_t size);
     Expected<PipelineLayout> build();
 
 private:
@@ -1350,10 +1535,8 @@ public:
         VkCompareOp depth_compare_op = VK_COMPARE_OP_LESS;
 
         // Color Blend
-        VkColorComponentFlags color_write_mask = VK_COLOR_COMPONENT_R_BIT |
-                                                 VK_COLOR_COMPONENT_G_BIT |
-                                                 VK_COLOR_COMPONENT_B_BIT |
-                                                 VK_COLOR_COMPONENT_A_BIT;
+        VkColorComponentFlags color_write_mask =
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
         // Rasterization
         VkPipelineRasterizationStateCreateInfo rasterization = {
@@ -1377,8 +1560,14 @@ public:
 
     PROSERPINE_NON_COPYABLE_MOVABLE(GraphicsPipeline);
 
-    inline VkPipeline handle() const { return this->_pipeline; }
-    inline operator VkPipeline() const { return this->_pipeline; }
+    inline VkPipeline handle() const
+    {
+        return this->_pipeline;
+    }
+    inline operator VkPipeline() const
+    {
+        return this->_pipeline;
+    }
 
 private:
     VkDevice _device = VK_NULL_HANDLE;
@@ -1399,11 +1588,17 @@ public:
 
     PROSERPINE_NON_COPYABLE_MOVABLE(ComputePipeline);
 
-    inline VkPipeline handle() const { return this->_pipeline; }
-    inline operator VkPipeline() const { return this->_pipeline; }
+    inline VkPipeline handle() const
+    {
+        return this->_pipeline;
+    }
+    inline operator VkPipeline() const
+    {
+        return this->_pipeline;
+    }
 
 private:
-    VkDevice _device   = VK_NULL_HANDLE;
+    VkDevice _device = VK_NULL_HANDLE;
     VkPipeline _pipeline = VK_NULL_HANDLE;
 
     friend Expected<ComputePipeline> create_compute_pipeline(VkDevice device,
@@ -1453,7 +1648,8 @@ class VulkanContext
 public:
     static constexpr std::size_t NUM_QUEUES = static_cast<std::size_t>(QueueType::Count);
 
-    struct CreateInfo {
+    struct CreateInfo
+    {
         const char* application_name = "Vulkan App";
         const char* engine_name = "Proserpine";
         std::uint32_t application_version = VK_MAKE_VERSION(1, 0, 0);
@@ -1465,18 +1661,32 @@ public:
         DescriptorPool::CreateInfo descriptor_pool_info;
     };
 
-    static Expected<VulkanContext> create(VulkanContext::CreateInfo& info,
-                                          std::function<bool(VkInstance, VkSurfaceKHR*)> create_surface_callback = [](VkInstance, VkSurfaceKHR*) { return true; });
+    static Expected<VulkanContext> create(
+        VulkanContext::CreateInfo& info,
+        std::function<bool(VkInstance, VkSurfaceKHR*)> create_surface_callback = [](VkInstance, VkSurfaceKHR*)
+        { return true; });
 
     VulkanContext() = default;
     ~VulkanContext();
 
     PROSERPINE_NON_COPYABLE_MOVABLE(VulkanContext);
 
-    inline VkInstance instance() const { return this->_instance; }
-    inline VkPhysicalDevice physical_device() const { return this->_physical_device; }
-    inline VkDevice device() const { return this->_device; }
-    inline VkSurfaceKHR surface() const { return this->_surface; }
+    inline VkInstance instance() const
+    {
+        return this->_instance;
+    }
+    inline VkPhysicalDevice physical_device() const
+    {
+        return this->_physical_device;
+    }
+    inline VkDevice device() const
+    {
+        return this->_device;
+    }
+    inline VkSurfaceKHR surface() const
+    {
+        return this->_surface;
+    }
 
     VkQueue queue(QueueType type, std::uint32_t index = 0) const;
     std::uint32_t queue_family(QueueType type) const;
@@ -1484,7 +1694,10 @@ public:
 
     bool is_extension_enabled(const char* name) const;
     bool is_feature_supported(Feature feature) const;
-    inline const DeviceProperties& device_properties() const { return this->_device_properties; }
+    inline const DeviceProperties& device_properties() const
+    {
+        return this->_device_properties;
+    }
 
     StagingBufferManager& staging();
     TimelineCallbackSystem& timeline_callbacks();
@@ -1497,14 +1710,13 @@ public:
 
     Expected<Buffer> create_buffer(const Buffer::CreateInfo& info);
     Expected<Image> create_image(const Image::CreateInfo& info);
-    Expected<Image> create_depth_image(VkExtent2D extent,
-                                       VkFormat format = VK_FORMAT_D32_SFLOAT);
+    Expected<Image> create_depth_image(VkExtent2D extent, VkFormat format = VK_FORMAT_D32_SFLOAT);
     Expected<TimelineSemaphore> create_timeline_semaphore(std::uint64_t initial_value = 0);
     Expected<Semaphore> create_semaphore();
     Expected<Fence> create_fence(bool signaled = false);
 
     // Returns a new FrameManager with N frames in flight
-    template<std::size_t N = 2>
+    template <std::size_t N = 2>
     Expected<FrameManager<N>> create_frame_manager()
     {
 
@@ -1545,8 +1757,7 @@ public:
 
     void wait_idle();
 
-    void immediate_submit(QueueType queue_type,
-                          const std::function<void(VkCommandBuffer)>& record);
+    void immediate_submit(QueueType queue_type, const std::function<void(VkCommandBuffer)>& record);
 
     struct SubmitInfo
     {
@@ -1626,14 +1837,11 @@ private:
 
     Expected<SelectedDevice> select_device(const DeviceFilter& filter);
 
-    VkResult create_logical_device(const SelectedDevice& selected,
-                                   const FeaturesRequested& features);
+    VkResult create_logical_device(const SelectedDevice& selected, const FeaturesRequested& features);
 
     void destroy();
 
-    static std::uint32_t find_memory_type(VkPhysicalDevice pd,
-                                     std::uint32_t type_filter,
-                                     VkMemoryPropertyFlags props);
+    static std::uint32_t find_memory_type(VkPhysicalDevice pd, std::uint32_t type_filter, VkMemoryPropertyFlags props);
 };
 
 // ============================================================================
@@ -1649,8 +1857,7 @@ inline std::uint32_t find_memory_type(VkPhysicalDevice physical_device,
 
     for(std::uint32_t i = 0; i < mem_properties.memoryTypeCount; ++i)
     {
-        if((type_filter & (1u << i)) &&
-           (mem_properties.memoryTypes[i].propertyFlags & properties) == properties)
+        if((type_filter & (1u << i)) && (mem_properties.memoryTypes[i].propertyFlags & properties) == properties)
         {
             return i;
         }
@@ -1675,7 +1882,8 @@ inline std::uint32_t find_memory_type(VkPhysicalDevice physical_device,
 #include <dlfcn.h>
 #endif
 
-namespace proserpine {
+namespace proserpine
+{
 
 // =============================================================================
 //  Debug callback for validation layers
@@ -1712,29 +1920,27 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL proserpine_debug_callback(VkDebugUtilsMess
 //  Extension/Layer checking
 // =============================================================================
 
-static bool has_extension(const std::vector<VkExtensionProperties>& exts,
-                          const char* name)
+static bool has_extension(const std::vector<VkExtensionProperties>& exts, const char* name)
 {
-    return std::any_of(exts.begin(), exts.end(), [name](const VkExtensionProperties& e) {
-        return std::strcmp(e.extensionName, name) == 0;
-    });
+    return std::any_of(exts.begin(),
+                       exts.end(),
+                       [name](const VkExtensionProperties& e) { return std::strcmp(e.extensionName, name) == 0; });
 }
 
-static bool has_layer(const std::vector<VkLayerProperties>& layers,
-                      const char* name)
+static bool has_layer(const std::vector<VkLayerProperties>& layers, const char* name)
 {
-    return std::any_of(layers.begin(), layers.end(), [name](const VkLayerProperties& l) {
-        return std::strcmp(l.layerName, name) == 0;
-    });
+    return std::any_of(layers.begin(),
+                       layers.end(),
+                       [name](const VkLayerProperties& l) { return std::strcmp(l.layerName, name) == 0; });
 }
 
 // =============================================================================
 //  VulkanContext::create_instance
 // =============================================================================
 
-inline VkResult VulkanContext::create_instance(const CreateInfo& info,
-                                               VkInstance& out_instance,
-                                               VkDebugUtilsMessengerEXT& out_messenger)
+PROSERPINE_INLINE VkResult VulkanContext::create_instance(const CreateInfo& info,
+                                                          VkInstance& out_instance,
+                                                          VkDebugUtilsMessengerEXT& out_messenger)
 {
     __LOG_TRACE("Creating a new VulkanContext instance");
 
@@ -1781,12 +1987,12 @@ inline VkResult VulkanContext::create_instance(const CreateInfo& info,
     {
         __LOG_TRACE("Enabling validation in new VulkanContext instance");
 
-        debug_create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                                   VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        debug_create_info.messageSeverity =
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
 
         debug_create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                               VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                               VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+                                        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                                        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
 
         debug_create_info.pfnUserCallback = proserpine_debug_callback;
         create_info.pNext = &debug_create_info;
@@ -1797,13 +2003,14 @@ inline VkResult VulkanContext::create_instance(const CreateInfo& info,
     if(result != VK_SUCCESS)
     {
         __LOG_ERROR("Error when creating a new VulkanContext instance (" __FMT_I32 ")",
-                           static_cast<std::int32_t>(result));
+                    static_cast<std::int32_t>(result));
         return result;
     }
 
     if(info.enable_validation)
     {
-        auto func = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(out_instance, "vkCreateDebugUtilsMessengerEXT"));
+        auto func = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+            vkGetInstanceProcAddr(out_instance, "vkCreateDebugUtilsMessengerEXT"));
 
         if(func)
             func(out_instance, &debug_create_info, nullptr, &out_messenger);
@@ -1818,7 +2025,7 @@ inline VkResult VulkanContext::create_instance(const CreateInfo& info,
 //  VulkanContext::select_device
 // =============================================================================
 
-inline Expected<SelectedDevice> VulkanContext::select_device(const DeviceFilter& filter)
+PROSERPINE_INLINE Expected<SelectedDevice> VulkanContext::select_device(const DeviceFilter& filter)
 {
     __LOG_TRACE("Selecting device");
 
@@ -1844,8 +2051,7 @@ inline Expected<SelectedDevice> VulkanContext::select_device(const DeviceFilter&
 
     for(auto physical_device : physical_devices)
     {
-        __LOG_TRACE("Evaluating physical device " __FMT_U64H "",
-                    reinterpret_cast<std::uint64_t>(physical_device));
+        __LOG_TRACE("Evaluating physical device " __FMT_U64H "", reinterpret_cast<std::uint64_t>(physical_device));
 
         DeviceProperties device_properties;
 
@@ -1880,7 +2086,10 @@ inline Expected<SelectedDevice> VulkanContext::select_device(const DeviceFilter&
         std::uint32_t ext_count = 0;
         vkEnumerateDeviceExtensionProperties(physical_device, nullptr, &ext_count, nullptr);
         device_properties.available_extensions.resize(ext_count);
-        vkEnumerateDeviceExtensionProperties(physical_device, nullptr, &ext_count, device_properties.available_extensions.data());
+        vkEnumerateDeviceExtensionProperties(physical_device,
+                                             nullptr,
+                                             &ext_count,
+                                             device_properties.available_extensions.data());
 
         // Check required extensions
         bool has_all_exts = true;
@@ -1923,10 +2132,7 @@ inline Expected<SelectedDevice> VulkanContext::select_device(const DeviceFilter&
             if(this->_surface != VK_NULL_HANDLE)
             {
                 VkBool32 present_support = false;
-                vkGetPhysicalDeviceSurfaceSupportKHR(physical_device,
-                                                     i,
-                                                     this->_surface,
-                                                     &present_support);
+                vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, i, this->_surface, &present_support);
 
                 if(!has_present && present_support)
                     has_present = true;
@@ -1957,10 +2163,18 @@ inline Expected<SelectedDevice> VulkanContext::select_device(const DeviceFilter&
 
         switch(device_properties.properties.deviceType)
         {
-            case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU: score = 1000; break;
-            case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: score = 500;  break;
-            case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU: score = 250;  break;
-            default: score = 100;  break;
+            case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+                score = 1000;
+                break;
+            case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+                score = 500;
+                break;
+            case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
+                score = 250;
+                break;
+            default:
+                score = 100;
+                break;
         }
 
         // User scoring override
@@ -1986,7 +2200,9 @@ inline Expected<SelectedDevice> VulkanContext::select_device(const DeviceFilter&
     if(candidates.empty())
         return Error("No suitable Vulkan device found matching the filter criteria");
 
-    std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) { return a.score > b.score; });
+    std::sort(candidates.begin(),
+              candidates.end(),
+              [](const Candidate& a, const Candidate& b) { return a.score > b.score; });
 
     auto& best = candidates[0];
     SelectedDevice selected;
@@ -2022,13 +2238,9 @@ inline Expected<SelectedDevice> VulkanContext::select_device(const DeviceFilter&
         if(this->_surface != VK_NULL_HANDLE)
         {
             VkBool32 present_support = false;
-            vkGetPhysicalDeviceSurfaceSupportKHR(selected.physical_device,
-                                                 i,
-                                                 this->_surface,
-                                                 &present_support);
+            vkGetPhysicalDeviceSurfaceSupportKHR(selected.physical_device, i, this->_surface, &present_support);
 
-            if(present_support &&
-               !selected.queue_family_valid[static_cast<std::size_t>(QueueType::Present)])
+            if(present_support && !selected.queue_family_valid[static_cast<std::size_t>(QueueType::Present)])
             {
                 selected.queue_family_indices[static_cast<std::size_t>(QueueType::Present)] = i;
                 selected.queue_family_valid[static_cast<std::size_t>(QueueType::Present)] = true;
@@ -2038,8 +2250,7 @@ inline Expected<SelectedDevice> VulkanContext::select_device(const DeviceFilter&
         }
 
         // Transfer queue (we prefer a dedicated one)
-        if((qfams[i].queueFlags & VK_QUEUE_TRANSFER_BIT) &&
-           !(qfams[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
+        if((qfams[i].queueFlags & VK_QUEUE_TRANSFER_BIT) && !(qfams[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
            !(qfams[i].queueFlags & VK_QUEUE_COMPUTE_BIT))
         {
             selected.queue_family_indices[static_cast<std::size_t>(QueueType::Transfer)] = i;
@@ -2056,7 +2267,7 @@ inline Expected<SelectedDevice> VulkanContext::select_device(const DeviceFilter&
             if(qfams[i].queueFlags & VK_QUEUE_COMPUTE_BIT)
             {
                 selected.queue_family_indices[static_cast<std::size_t>(QueueType::Compute)] = i;
-                selected.queue_family_valid[static_cast<std::size_t>(QueueType::Compute)]   = true;
+                selected.queue_family_valid[static_cast<std::size_t>(QueueType::Compute)] = true;
                 break;
             }
         }
@@ -2071,7 +2282,7 @@ inline Expected<SelectedDevice> VulkanContext::select_device(const DeviceFilter&
             if(qfams[i].queueFlags & VK_QUEUE_TRANSFER_BIT)
             {
                 selected.queue_family_indices[static_cast<std::size_t>(QueueType::Transfer)] = i;
-                selected.queue_family_valid[static_cast<std::size_t>(QueueType::Transfer)]   = true;
+                selected.queue_family_valid[static_cast<std::size_t>(QueueType::Transfer)] = true;
                 break;
             }
         }
@@ -2084,8 +2295,8 @@ inline Expected<SelectedDevice> VulkanContext::select_device(const DeviceFilter&
 //  VulkanContext::create_logical_device
 // =============================================================================
 
-inline VkResult VulkanContext::create_logical_device(const SelectedDevice& selected,
-                                                     const FeaturesRequested& features)
+PROSERPINE_INLINE VkResult VulkanContext::create_logical_device(const SelectedDevice& selected,
+                                                                const FeaturesRequested& features)
 {
     __LOG_TRACE("Creating a new logical device");
 
@@ -2116,7 +2327,8 @@ inline VkResult VulkanContext::create_logical_device(const SelectedDevice& selec
 
     std::vector<const char*> device_extensions;
 
-    auto maybe_add_ext = [&](const char* ext) -> bool {
+    auto maybe_add_ext = [&](const char* ext) -> bool
+    {
         if(has_extension(selected.props.available_extensions, ext))
         {
             device_extensions.push_back(ext);
@@ -2191,19 +2403,19 @@ inline VkResult VulkanContext::create_logical_device(const SelectedDevice& selec
 
     if(features.synchronization2)
     {
-        f13.synchronization2  = VK_TRUE;
+        f13.synchronization2 = VK_TRUE;
         this->_feature_flags[static_cast<std::size_t>(Feature::Synchronization2)] = true;
     }
 
     if(features.dynamic_rendering)
     {
-        f13.dynamicRendering   = VK_TRUE;
+        f13.dynamicRendering = VK_TRUE;
         this->_feature_flags[static_cast<std::size_t>(Feature::DynamicRendering)] = true;
     }
 
     if(features.shader_int64)
     {
-        features2.features.shaderInt64   = VK_TRUE;
+        features2.features.shaderInt64 = VK_TRUE;
         this->_feature_flags[static_cast<std::size_t>(Feature::ShaderInt64)] = true;
     }
 
@@ -2237,7 +2449,7 @@ inline VkResult VulkanContext::create_logical_device(const SelectedDevice& selec
         {
             __LOG_TRACE("Getting Device Queue: " __FMT_U32 "", i);
             this->_queues[i].family = selected.queue_family_indices[i];
-            this->_queues[i].valid  = true;
+            this->_queues[i].valid = true;
             vkGetDeviceQueue(this->_device, this->_queues[i].family, 0, &this->_queues[i].queue);
         }
         else
@@ -2280,8 +2492,9 @@ inline VkResult VulkanContext::create_logical_device(const SelectedDevice& selec
 //  VulkanContext::create
 // ============================================================================
 
-inline Expected<VulkanContext> VulkanContext::create(VulkanContext::CreateInfo& info,
-                                                     std::function<bool(VkInstance, VkSurfaceKHR*)> create_surface_callback)
+PROSERPINE_INLINE Expected<VulkanContext> VulkanContext::create(
+    VulkanContext::CreateInfo& info,
+    std::function<bool(VkInstance, VkSurfaceKHR*)> create_surface_callback)
 {
     __LOG_TRACE("Creating a new VulkanContext");
 
@@ -2314,9 +2527,8 @@ inline Expected<VulkanContext> VulkanContext::create(VulkanContext::CreateInfo& 
     ctx._device_properties = ctx._selected_device.props;
 
     if(std::any_of(info.extra_instance_extensions.begin(),
-                   info.extra_instance_extensions.end(), [](const char* ext_name) {
-                       return std::strcmp(ext_name, VK_KHR_SURFACE_EXTENSION_NAME) == 0;
-                   }))
+                   info.extra_instance_extensions.end(),
+                   [](const char* ext_name) { return std::strcmp(ext_name, VK_KHR_SURFACE_EXTENSION_NAME) == 0; }))
     {
         __LOG_TRACE("Enabling VK_KHR_Surface extension");
         info.features.surface = true;
@@ -2338,7 +2550,7 @@ inline Expected<VulkanContext> VulkanContext::create(VulkanContext::CreateInfo& 
 //  VulkanContext dtor/move
 // ============================================================================
 
-inline void VulkanContext::destroy()
+PROSERPINE_INLINE void VulkanContext::destroy()
 {
     if(this->_instance != VK_NULL_HANDLE)
     {
@@ -2387,7 +2599,8 @@ inline void VulkanContext::destroy()
 
         if(this->_debug_messenger != VK_NULL_HANDLE && this->_instance != VK_NULL_HANDLE)
         {
-            auto func = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(this->_instance, "vkDestroyDebugUtilsMessengerEXT"));
+            auto func = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+                vkGetInstanceProcAddr(this->_instance, "vkDestroyDebugUtilsMessengerEXT"));
 
             if(func)
                 func(this->_instance, this->_debug_messenger, nullptr);
@@ -2400,23 +2613,44 @@ inline void VulkanContext::destroy()
     }
 }
 
-inline VulkanContext::~VulkanContext() { this->destroy(); }
+PROSERPINE_INLINE VulkanContext::~VulkanContext()
+{
+    this->destroy();
+}
 
-inline VulkanContext::VulkanContext(VulkanContext&& other) noexcept
+PROSERPINE_INLINE VulkanContext::VulkanContext(VulkanContext&& other) noexcept
 {
     __MOVE_AND_NULL(_instance, _debug_messenger, _physical_device, _device, _surface);
-    __MOVE(_device_properties, _selected_device, _enabled_device_extensions, _staging, _timeline_callbacks, _renderdoc, _fence_pool, _descriptor_pool, _command_profiler, _validation_enabled);
+    __MOVE(_device_properties,
+           _selected_device,
+           _enabled_device_extensions,
+           _staging,
+           _timeline_callbacks,
+           _renderdoc,
+           _fence_pool,
+           _descriptor_pool,
+           _command_profiler,
+           _validation_enabled);
     __MEMCPY_AND_ZERO(_queues, _immediate_contexts, _feature_flags);
 }
 
-inline VulkanContext& VulkanContext::operator=(VulkanContext&& other) noexcept
+PROSERPINE_INLINE VulkanContext& VulkanContext::operator=(VulkanContext&& other) noexcept
 {
     if(this != &other)
     {
         this->destroy();
 
         __MOVE_AND_NULL(_instance, _debug_messenger, _physical_device, _device, _surface);
-        __MOVE(_device_properties, _selected_device, _enabled_device_extensions, _staging, _timeline_callbacks, _renderdoc, _fence_pool, _descriptor_pool, _command_profiler, _validation_enabled);
+        __MOVE(_device_properties,
+               _selected_device,
+               _enabled_device_extensions,
+               _staging,
+               _timeline_callbacks,
+               _renderdoc,
+               _fence_pool,
+               _descriptor_pool,
+               _command_profiler,
+               _validation_enabled);
         __MEMCPY_AND_ZERO(_queues, _immediate_contexts, _feature_flags);
     }
 
@@ -2427,8 +2661,7 @@ inline VulkanContext& VulkanContext::operator=(VulkanContext&& other) noexcept
 //  VulkanContext accessors/getters
 // =============================================================================
 
-inline VkQueue VulkanContext::queue(QueueType type,
-                                    std::uint32_t /* index */) const
+PROSERPINE_INLINE VkQueue VulkanContext::queue(QueueType type, std::uint32_t /* index */) const
 {
     std::size_t i = static_cast<std::size_t>(type);
 
@@ -2437,31 +2670,31 @@ inline VkQueue VulkanContext::queue(QueueType type,
     return this->_queues[i].queue;
 }
 
-inline std::uint32_t VulkanContext::queue_family(QueueType type) const
+PROSERPINE_INLINE std::uint32_t VulkanContext::queue_family(QueueType type) const
 {
     std::size_t i = static_cast<std::size_t>(type);
     PROSERPINE_ASSERT(this->_queues[i].valid, "Queue is invalid", PROSERPINE_INVALID_QUEUE_INDEX);
     return this->_queues[i].family;
 }
 
-inline bool VulkanContext::has_queue(QueueType type) const
+PROSERPINE_INLINE bool VulkanContext::has_queue(QueueType type) const
 {
     return this->_queues[static_cast<std::size_t>(type)].valid;
 }
 
-inline bool VulkanContext::is_extension_enabled(const char* name) const
+PROSERPINE_INLINE bool VulkanContext::is_extension_enabled(const char* name) const
 {
     return std::any_of(this->_enabled_device_extensions.begin(),
                        this->_enabled_device_extensions.end(),
                        [name](const std::string& s) { return s == name; });
 }
 
-inline bool VulkanContext::is_feature_supported(Feature feature) const
+PROSERPINE_INLINE bool VulkanContext::is_feature_supported(Feature feature) const
 {
     return this->_feature_flags[static_cast<std::size_t>(feature)];
 }
 
-inline StagingBufferManager& VulkanContext::staging()
+PROSERPINE_INLINE StagingBufferManager& VulkanContext::staging()
 {
     if(!this->_staging)
     {
@@ -2476,7 +2709,7 @@ inline StagingBufferManager& VulkanContext::staging()
     return *this->_staging;
 }
 
-inline TimelineCallbackSystem& VulkanContext::timeline_callbacks()
+PROSERPINE_INLINE TimelineCallbackSystem& VulkanContext::timeline_callbacks()
 {
     if(!this->_timeline_callbacks)
         this->_timeline_callbacks = std::make_unique<TimelineCallbackSystem>(this->_device);
@@ -2484,7 +2717,7 @@ inline TimelineCallbackSystem& VulkanContext::timeline_callbacks()
     return *this->_timeline_callbacks;
 }
 
-inline RenderDocIntegration& VulkanContext::renderdoc()
+PROSERPINE_INLINE RenderDocIntegration& VulkanContext::renderdoc()
 {
     if(!this->_renderdoc)
         this->_renderdoc = std::make_unique<RenderDocIntegration>();
@@ -2492,7 +2725,7 @@ inline RenderDocIntegration& VulkanContext::renderdoc()
     return *this->_renderdoc;
 }
 
-inline FencePool& VulkanContext::fence_pool()
+PROSERPINE_INLINE FencePool& VulkanContext::fence_pool()
 {
     if(!this->_fence_pool)
         this->_fence_pool = std::make_unique<FencePool>(this->_device);
@@ -2500,16 +2733,15 @@ inline FencePool& VulkanContext::fence_pool()
     return *this->_fence_pool;
 }
 
-inline DescriptorPool& VulkanContext::descriptor_pool()
+PROSERPINE_INLINE DescriptorPool& VulkanContext::descriptor_pool()
 {
     if(!this->_descriptor_pool)
-        this->_descriptor_pool = std::make_unique<DescriptorPool>(this->_device,
-                                                                  this->_descriptor_pool_create_info);
+        this->_descriptor_pool = std::make_unique<DescriptorPool>(this->_device, this->_descriptor_pool_create_info);
 
     return *this->_descriptor_pool;
 }
 
-inline CommandPool& VulkanContext::command_pool(QueueType queue_type)
+PROSERPINE_INLINE CommandPool& VulkanContext::command_pool(QueueType queue_type)
 {
     const std::size_t index = static_cast<std::size_t>(queue_type);
 
@@ -2519,11 +2751,10 @@ inline CommandPool& VulkanContext::command_pool(QueueType queue_type)
     return this->_command_pools[index];
 }
 
-inline CommandProfiler& VulkanContext::command_profiler()
+PROSERPINE_INLINE CommandProfiler& VulkanContext::command_profiler()
 {
     if(!this->_command_profiler)
-        this->_command_profiler = std::make_unique<CommandProfiler>(this->_device,
-                                                                    this->_physical_device);
+        this->_command_profiler = std::make_unique<CommandProfiler>(this->_device, this->_physical_device);
 
     return *this->_command_profiler;
 }
@@ -2532,37 +2763,42 @@ inline CommandProfiler& VulkanContext::command_profiler()
 //  VulkanContext object creation helpers
 // =============================================================================
 
-inline std::uint32_t VulkanContext::find_memory_type(VkPhysicalDevice physical_device,
-                                                     std::uint32_t type_filter,
-                                                     VkMemoryPropertyFlags props)
+PROSERPINE_INLINE std::uint32_t VulkanContext::find_memory_type(VkPhysicalDevice physical_device,
+                                                                std::uint32_t type_filter,
+                                                                VkMemoryPropertyFlags props)
 {
     return proserpine::find_memory_type(physical_device, type_filter, props);
 }
 
-inline Expected<Buffer> VulkanContext::create_buffer(const Buffer::CreateInfo& info)
+PROSERPINE_INLINE Expected<Buffer> VulkanContext::create_buffer(const Buffer::CreateInfo& info)
 {
     PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", Error("Invalid Device"));
-    PROSERPINE_ASSERT(this->_physical_device != VK_NULL_HANDLE, "Physical device is NULL", Error("Invalid Physical Device"));
+    PROSERPINE_ASSERT(this->_physical_device != VK_NULL_HANDLE,
+                      "Physical device is NULL",
+                      Error("Invalid Physical Device"));
 
     return Buffer(this->_device, this->_physical_device, info);
 }
 
-inline Expected<Image> VulkanContext::create_image(const Image::CreateInfo& info)
+PROSERPINE_INLINE Expected<Image> VulkanContext::create_image(const Image::CreateInfo& info)
 {
     PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", Error("Invalid Device"));
-    PROSERPINE_ASSERT(this->_physical_device != VK_NULL_HANDLE, "Physical device is NULL", Error("Invalid Physical Device"));
+    PROSERPINE_ASSERT(this->_physical_device != VK_NULL_HANDLE,
+                      "Physical device is NULL",
+                      Error("Invalid Physical Device"));
 
     return Image(this->_device, this->_physical_device, info);
 }
 
-inline Expected<Image> VulkanContext::create_depth_image(VkExtent2D extent,
-                                                         VkFormat format)
+PROSERPINE_INLINE Expected<Image> VulkanContext::create_depth_image(VkExtent2D extent, VkFormat format)
 {
     PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", Error("Invalid Device"));
-    PROSERPINE_ASSERT(this->_physical_device != VK_NULL_HANDLE, "Physical device is NULL", Error("Invalid Physical Device"));
+    PROSERPINE_ASSERT(this->_physical_device != VK_NULL_HANDLE,
+                      "Physical device is NULL",
+                      Error("Invalid Physical Device"));
 
     Image::CreateInfo info{};
-    info.extent = { extent.width, extent.height, 1};
+    info.extent = {extent.width, extent.height, 1};
     info.format = format;
     info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
     info.memory_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
@@ -2571,28 +2807,28 @@ inline Expected<Image> VulkanContext::create_depth_image(VkExtent2D extent,
     return this->create_image(info);
 }
 
-inline Expected<TimelineSemaphore> VulkanContext::create_timeline_semaphore(std::uint64_t initial_value)
+PROSERPINE_INLINE Expected<TimelineSemaphore> VulkanContext::create_timeline_semaphore(std::uint64_t initial_value)
 {
     PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", Error("Invalid Device"));
 
     return TimelineSemaphore(this->_device, initial_value);
 }
 
-inline Expected<Semaphore> VulkanContext::create_semaphore()
+PROSERPINE_INLINE Expected<Semaphore> VulkanContext::create_semaphore()
 {
     PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", Error("Invalid Device"));
 
     return Semaphore(this->_device);
 }
 
-inline Expected<Fence> VulkanContext::create_fence(bool signaled)
+PROSERPINE_INLINE Expected<Fence> VulkanContext::create_fence(bool signaled)
 {
     PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", Error("Invalid Device"));
 
     return Fence(this->_device, signaled);
 }
 
-inline Expected<SwapChain> VulkanContext::create_swapchain(SwapChain::CreateInfo& create_info)
+PROSERPINE_INLINE Expected<SwapChain> VulkanContext::create_swapchain(SwapChain::CreateInfo& create_info)
 {
     PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", Error("Invalid Device"));
     PROSERPINE_ASSERT(this->_surface != VK_NULL_HANDLE, "Surface is NULL", Error("Invalid Surface"));
@@ -2614,12 +2850,12 @@ inline Expected<SwapChain> VulkanContext::create_swapchain(SwapChain::CreateInfo
     return sc;
 }
 
-inline Expected<CommandPool> VulkanContext::create_command_pool(QueueType queue_type)
+PROSERPINE_INLINE Expected<CommandPool> VulkanContext::create_command_pool(QueueType queue_type)
 {
     return CommandPool(this->_device, this->queue_family(queue_type));
 }
 
-inline void VulkanContext::wait_idle()
+PROSERPINE_INLINE void VulkanContext::wait_idle()
 {
     if(this->_device != VK_NULL_HANDLE)
     {
@@ -2628,8 +2864,8 @@ inline void VulkanContext::wait_idle()
     }
 }
 
-inline void VulkanContext::immediate_submit(QueueType queue_type,
-                                            const std::function<void(VkCommandBuffer)>& record)
+PROSERPINE_INLINE void VulkanContext::immediate_submit(QueueType queue_type,
+                                                       const std::function<void(VkCommandBuffer)>& record)
 {
     // TODO: use timeline semaphore
 
@@ -2663,7 +2899,7 @@ inline void VulkanContext::immediate_submit(QueueType queue_type,
     vkWaitForFences(this->_device, 1, &imm_ctx.fence, VK_TRUE, PROSERPINE_WAIT_INFINITE);
 }
 
-inline void VulkanContext::submit(QueueType queue_type, const SubmitInfo& info)
+PROSERPINE_INLINE void VulkanContext::submit(QueueType queue_type, const SubmitInfo& info)
 {
     std::size_t qi = static_cast<std::size_t>(queue_type);
     auto queue = this->_queues[qi].queue;
@@ -2697,7 +2933,7 @@ inline void VulkanContext::submit(QueueType queue_type, const SubmitInfo& info)
     vkQueueSubmit(queue, 1, &submit_info, info.fence);
 }
 
-inline VkResult VulkanContext::present(const PresentInfo& info)
+PROSERPINE_INLINE VkResult VulkanContext::present(const PresentInfo& info)
 {
     VkPresentInfoKHR present_info{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
     present_info.swapchainCount = 1;
@@ -2713,7 +2949,7 @@ inline VkResult VulkanContext::present(const PresentInfo& info)
     return vkQueuePresentKHR(this->queue(QueueType::Present), &present_info);
 }
 
-inline Expected<DescriptorSet> VulkanContext::allocate_descriptor_set(VkDescriptorSetLayout layout)
+PROSERPINE_INLINE Expected<DescriptorSet> VulkanContext::allocate_descriptor_set(VkDescriptorSetLayout layout)
 {
     return this->descriptor_pool().allocate_descriptor_set(layout);
 }
@@ -2722,31 +2958,47 @@ inline Expected<DescriptorSet> VulkanContext::allocate_descriptor_set(VkDescript
 //  SwapChain implementation
 // ============================================================================
 
-inline SwapChain::~SwapChain()
+PROSERPINE_INLINE SwapChain::~SwapChain()
 {
     this->destroy();
 }
 
-inline SwapChain::SwapChain(SwapChain&& other) noexcept
+PROSERPINE_INLINE SwapChain::SwapChain(SwapChain&& other) noexcept
 {
     __MOVE_AND_NULL(_device, _physical_device, _surface, _swapchain);
-    __MOVE(_graphics_queue_family, _present_queue_family, _images, _views, _first_use, _image_rendered_semaphores, _format, _extent, _create_info);
+    __MOVE(_graphics_queue_family,
+           _present_queue_family,
+           _images,
+           _views,
+           _first_use,
+           _image_rendered_semaphores,
+           _format,
+           _extent,
+           _create_info);
 }
 
-inline SwapChain& SwapChain::operator=(SwapChain&& other) noexcept
+PROSERPINE_INLINE SwapChain& SwapChain::operator=(SwapChain&& other) noexcept
 {
     if(this != &other)
     {
         __MOVE_AND_NULL(_device, _physical_device, _surface, _swapchain);
-        __MOVE(_graphics_queue_family, _present_queue_family, _images, _views, _first_use, _image_rendered_semaphores, _format, _extent, _create_info);
+        __MOVE(_graphics_queue_family,
+               _present_queue_family,
+               _images,
+               _views,
+               _first_use,
+               _image_rendered_semaphores,
+               _format,
+               _extent,
+               _create_info);
     }
 
     return *this;
 }
 
-inline VkResult SwapChain::acquire_next_image(VkSemaphore signal_semaphore,
-                                              VkFence signal_fence,
-                                              std::uint32_t* image_index)
+PROSERPINE_INLINE VkResult SwapChain::acquire_next_image(VkSemaphore signal_semaphore,
+                                                         VkFence signal_fence,
+                                                         std::uint32_t* image_index)
 {
     VkAcquireNextImageInfoKHR info{VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR};
     info.pNext = nullptr;
@@ -2761,7 +3013,7 @@ inline VkResult SwapChain::acquire_next_image(VkSemaphore signal_semaphore,
     return vkAcquireNextImage2KHR(this->_device, &info, image_index);
 }
 
-inline Expected<void> SwapChain::recreate(std::uint32_t width, std::uint32_t height)
+PROSERPINE_INLINE Expected<void> SwapChain::recreate(std::uint32_t width, std::uint32_t height)
 {
     __LOG_TRACE("SwapChain: Recreating (" __FMT_U32 ", " __FMT_U32 ")", width, height);
 
@@ -2784,7 +3036,7 @@ inline Expected<void> SwapChain::recreate(std::uint32_t width, std::uint32_t hei
     return this->create();
 }
 
-inline Expected<void> SwapChain::create()
+PROSERPINE_INLINE Expected<void> SwapChain::create()
 {
     VkPhysicalDeviceSurfaceInfo2KHR surface_info{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR};
     surface_info.pNext = nullptr;
@@ -2793,9 +3045,7 @@ inline Expected<void> SwapChain::create()
     VkSurfaceCapabilities2KHR capabilities{VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR};
     capabilities.pNext = nullptr;
 
-    vkGetPhysicalDeviceSurfaceCapabilities2KHR(this->_physical_device,
-                                               &surface_info,
-                                               &capabilities);
+    vkGetPhysicalDeviceSurfaceCapabilities2KHR(this->_physical_device, &surface_info, &capabilities);
 
     VkColorSpaceKHR color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
     VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
@@ -2805,22 +3055,15 @@ inline Expected<void> SwapChain::create()
 
     std::uint32_t formats_count;
 
-    vkGetPhysicalDeviceSurfaceFormats2KHR(this->_physical_device,
-                                          &surface_info,
-                                          &formats_count,
-                                          nullptr);
+    vkGetPhysicalDeviceSurfaceFormats2KHR(this->_physical_device, &surface_info, &formats_count, nullptr);
 
     if(formats_count == 0)
         return Error("SwapChain: Could not find any available format");
 
     std::vector<VkSurfaceFormat2KHR> formats(static_cast<std::size_t>(formats_count),
-                                                {VK_STRUCTURE_TYPE_SURFACE_FORMAT_2_KHR});
+                                             {VK_STRUCTURE_TYPE_SURFACE_FORMAT_2_KHR});
 
-    vkGetPhysicalDeviceSurfaceFormats2KHR(this->_physical_device,
-                                          &surface_info,
-                                          &formats_count,
-                                          formats.data());
-
+    vkGetPhysicalDeviceSurfaceFormats2KHR(this->_physical_device, &surface_info, &formats_count, formats.data());
 
     for(const auto& format : formats)
     {
@@ -2851,10 +3094,7 @@ inline Expected<void> SwapChain::create()
     std::vector<VkPresentModeKHR> present_modes;
     std::uint32_t present_modes_count;
 
-    vkGetPhysicalDeviceSurfacePresentModesKHR(this->_physical_device,
-                                              this->_surface,
-                                              &present_modes_count,
-                                              nullptr);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(this->_physical_device, this->_surface, &present_modes_count, nullptr);
 
     if(present_modes_count == 0)
         return Error("SwapChain: Could not find any available present mode");
@@ -2885,8 +3125,7 @@ inline Expected<void> SwapChain::create()
                    static_cast<std::int32_t>(present_mode));
     }
 
-    __LOG_TRACE("SwapChain: Present mode: " __FMT_I32,
-                static_cast<std::int32_t>(present_mode));
+    __LOG_TRACE("SwapChain: Present mode: " __FMT_I32, static_cast<std::int32_t>(present_mode));
 
     // Extent
 
@@ -2904,9 +3143,7 @@ inline Expected<void> SwapChain::create()
                                           capabilities.surfaceCapabilities.maxImageExtent.height);
     }
 
-    __LOG_TRACE("SwapChain: Extent: " __FMT_U32 "x" __FMT_U32,
-                this->_extent.width,
-                this->_extent.height);
+    __LOG_TRACE("SwapChain: Extent: " __FMT_U32 "x" __FMT_U32, this->_extent.width, this->_extent.height);
 
     // Image count
 
@@ -2934,10 +3171,7 @@ inline Expected<void> SwapChain::create()
     sc_create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     sc_create_info.oldSwapchain = this->_swapchain;
 
-    std::uint32_t queue_family_indices[2] = {
-        this->_graphics_queue_family,
-        this->_present_queue_family
-    };
+    std::uint32_t queue_family_indices[2] = {this->_graphics_queue_family, this->_present_queue_family};
 
     if(queue_family_indices[0] != queue_family_indices[1])
     {
@@ -2988,19 +3222,14 @@ inline Expected<void> SwapChain::create()
         view_create_info.subresourceRange.baseArrayLayer = 0;
         view_create_info.subresourceRange.layerCount = 1;
 
-        PROSERPINE_VK_CHECK(vkCreateImageView(this->_device,
-                                              &view_create_info,
-                                              nullptr,
-                                              &this->_views[i]),
+        PROSERPINE_VK_CHECK(vkCreateImageView(this->_device, &view_create_info, nullptr, &this->_views[i]),
                             "SwapChain: Failed to create VkImageView");
 
         VkSemaphoreCreateInfo semaphore_create_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
 
-        PROSERPINE_VK_CHECK(vkCreateSemaphore(this->_device,
-                                              &semaphore_create_info,
-                                              nullptr,
-                                              &this->_image_rendered_semaphores[i]),
-                            "SwapChain: Failed to create VkSemaphore");
+        PROSERPINE_VK_CHECK(
+            vkCreateSemaphore(this->_device, &semaphore_create_info, nullptr, &this->_image_rendered_semaphores[i]),
+            "SwapChain: Failed to create VkSemaphore");
 
         i++;
     }
@@ -3008,7 +3237,7 @@ inline Expected<void> SwapChain::create()
     return Ok();
 }
 
-inline void SwapChain::destroy()
+PROSERPINE_INLINE void SwapChain::destroy()
 {
     if(this->_device != VK_NULL_HANDLE && this->_swapchain != VK_NULL_HANDLE)
     {
@@ -3037,24 +3266,22 @@ inline void SwapChain::destroy()
 //  TimelineSemaphore implementation
 // ============================================================================
 
-inline TimelineSemaphore::TimelineSemaphore(VkDevice device,
-                                            std::uint64_t initial_value) : _device(device)
+PROSERPINE_INLINE TimelineSemaphore::TimelineSemaphore(VkDevice device, std::uint64_t initial_value)
+    : _device(device)
 {
     VkSemaphoreTypeCreateInfo type_ci{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};
     type_ci.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-    type_ci.initialValue  = initial_value;
+    type_ci.initialValue = initial_value;
 
     VkSemaphoreCreateInfo ci{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
     ci.pNext = &type_ci;
 
-    PROSERPINE_VK_CHECK_VOID(vkCreateSemaphore(device, &ci, nullptr, &_sema),
-                             "Failed to create timeline semaphore");
+    PROSERPINE_VK_CHECK_VOID(vkCreateSemaphore(device, &ci, nullptr, &_sema), "Failed to create timeline semaphore");
 
-    __LOG_TRACE("Created a new timeline semaphore with value: " __FMT_U64 "",
-                initial_value);
+    __LOG_TRACE("Created a new timeline semaphore with value: " __FMT_U64 "", initial_value);
 }
 
-inline TimelineSemaphore::~TimelineSemaphore()
+PROSERPINE_INLINE TimelineSemaphore::~TimelineSemaphore()
 {
     if(this->_sema != VK_NULL_HANDLE && this->_device != VK_NULL_HANDLE)
     {
@@ -3063,12 +3290,12 @@ inline TimelineSemaphore::~TimelineSemaphore()
     }
 }
 
-inline TimelineSemaphore::TimelineSemaphore(TimelineSemaphore&& other) noexcept
+PROSERPINE_INLINE TimelineSemaphore::TimelineSemaphore(TimelineSemaphore&& other) noexcept
 {
     __MOVE_AND_NULL(_device, _sema);
 }
 
-inline TimelineSemaphore& TimelineSemaphore::operator=(TimelineSemaphore&& other) noexcept
+PROSERPINE_INLINE TimelineSemaphore& TimelineSemaphore::operator=(TimelineSemaphore&& other) noexcept
 {
     if(this != &other)
     {
@@ -3081,18 +3308,16 @@ inline TimelineSemaphore& TimelineSemaphore::operator=(TimelineSemaphore&& other
     return *this;
 }
 
-inline void TimelineSemaphore::signal(std::uint64_t value)
+PROSERPINE_INLINE void TimelineSemaphore::signal(std::uint64_t value)
 {
     VkSemaphoreSignalInfo si{VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO};
     si.semaphore = _sema;
     si.value = value;
 
-    PROSERPINE_VK_CHECK_VOID(vkSignalSemaphore(_device, &si),
-                             "Failed to signal timeline semaphore");
+    PROSERPINE_VK_CHECK_VOID(vkSignalSemaphore(_device, &si), "Failed to signal timeline semaphore");
 }
 
-inline VkResult TimelineSemaphore::wait(std::uint64_t value,
-                                        std::uint64_t timeout_ns)
+PROSERPINE_INLINE VkResult TimelineSemaphore::wait(std::uint64_t value, std::uint64_t timeout_ns)
 {
     VkSemaphoreWaitInfo wi{VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO};
     wi.semaphoreCount = 1;
@@ -3102,7 +3327,7 @@ inline VkResult TimelineSemaphore::wait(std::uint64_t value,
     return vkWaitSemaphores(_device, &wi, timeout_ns);
 }
 
-inline std::uint64_t TimelineSemaphore::counter() const
+PROSERPINE_INLINE std::uint64_t TimelineSemaphore::counter() const
 {
     std::uint64_t value = 0;
     vkGetSemaphoreCounterValue(this->_device, this->_sema, &value);
@@ -3113,7 +3338,8 @@ inline std::uint64_t TimelineSemaphore::counter() const
 //  Semaphore implementation
 // ============================================================================
 
-inline Semaphore::Semaphore(VkDevice device) : _device(device)
+PROSERPINE_INLINE Semaphore::Semaphore(VkDevice device)
+    : _device(device)
 {
     VkSemaphoreCreateInfo info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
 
@@ -3121,7 +3347,7 @@ inline Semaphore::Semaphore(VkDevice device) : _device(device)
                              "Failed to create VkSemaphore");
 }
 
-inline Semaphore::~Semaphore()
+PROSERPINE_INLINE Semaphore::~Semaphore()
 {
     if(this->_device != VK_NULL_HANDLE)
     {
@@ -3133,12 +3359,12 @@ inline Semaphore::~Semaphore()
     }
 }
 
-inline Semaphore::Semaphore(Semaphore&& other) noexcept
+PROSERPINE_INLINE Semaphore::Semaphore(Semaphore&& other) noexcept
 {
     __MOVE_AND_NULL(_device, _sema);
 }
 
-inline Semaphore& Semaphore::operator=(Semaphore&& other) noexcept
+PROSERPINE_INLINE Semaphore& Semaphore::operator=(Semaphore&& other) noexcept
 {
     if(this != &other)
     {
@@ -3152,18 +3378,19 @@ inline Semaphore& Semaphore::operator=(Semaphore&& other) noexcept
 //  TimelineCallbackSystem implementation
 // ============================================================================
 
-inline TimelineCallbackSystem::TimelineCallbackSystem(VkDevice device)
-    : _device(device), _running(true)
+PROSERPINE_INLINE TimelineCallbackSystem::TimelineCallbackSystem(VkDevice device)
+    : _device(device),
+      _running(true)
 {
     this->_worker = std::thread(&TimelineCallbackSystem::worker_loop, this);
 }
 
-inline TimelineCallbackSystem::~TimelineCallbackSystem()
+PROSERPINE_INLINE TimelineCallbackSystem::~TimelineCallbackSystem()
 {
     this->shutdown();
 }
 
-inline void TimelineCallbackSystem::shutdown()
+PROSERPINE_INLINE void TimelineCallbackSystem::shutdown()
 {
     if(this->_running.exchange(false))
     {
@@ -3182,9 +3409,9 @@ inline void TimelineCallbackSystem::shutdown()
     }
 }
 
-inline void TimelineCallbackSystem::enqueue(VkSemaphore semaphore,
-                                            std::uint64_t wait_value,
-                                            std::function<void()> callback)
+PROSERPINE_INLINE void TimelineCallbackSystem::enqueue(VkSemaphore semaphore,
+                                                       std::uint64_t wait_value,
+                                                       std::function<void()> callback)
 {
     std::lock_guard lock(this->_mutex);
 
@@ -3192,19 +3419,17 @@ inline void TimelineCallbackSystem::enqueue(VkSemaphore semaphore,
     this->_cv.notify_one();
 }
 
-inline void TimelineCallbackSystem::cancel(VkSemaphore semaphore)
+PROSERPINE_INLINE void TimelineCallbackSystem::cancel(VkSemaphore semaphore)
 {
     std::lock_guard lock(this->_mutex);
 
     this->_pending.erase(std::remove_if(this->_pending.begin(),
                                         this->_pending.end(),
-                                        [semaphore](const PendingCallback& pc) {
-                                    return pc.semaphore == semaphore;
-                                }),
-                        this->_pending.end());
+                                        [semaphore](const PendingCallback& pc) { return pc.semaphore == semaphore; }),
+                         this->_pending.end());
 }
 
-inline void TimelineCallbackSystem::worker_loop()
+PROSERPINE_INLINE void TimelineCallbackSystem::worker_loop()
 {
     while(this->_running)
     {
@@ -3212,7 +3437,9 @@ inline void TimelineCallbackSystem::worker_loop()
 
         {
             std::unique_lock lock(_mutex);
-            this->_cv.wait_for(lock, std::chrono::milliseconds(10), [this] { return !this->_pending.empty() || !this->_running; });
+            this->_cv.wait_for(lock,
+                               std::chrono::milliseconds(10),
+                               [this] { return !this->_pending.empty() || !this->_running; });
 
             if(!this->_running && this->_pending.empty())
                 break;
@@ -3258,11 +3485,11 @@ inline void TimelineCallbackSystem::worker_loop()
 //  RenderDocIntegration implementation
 // =============================================================================
 
-inline RenderDocIntegration::RenderDocIntegration()
+PROSERPINE_INLINE RenderDocIntegration::RenderDocIntegration()
 {
     __LOG_TRACE("Initializing RenderDoc integration");
 
-    using GetApiFn = int(*)(int, void**);
+    using GetApiFn = int (*)(int, void**);
 
 #if defined(PROSERPINE_PLATFORM_LINUX)
     this->_module = dlopen("librenderdoc.so", RTLD_NOW | RTLD_NOLOAD);
@@ -3282,8 +3509,8 @@ inline RenderDocIntegration::RenderDocIntegration()
 
         for(const auto comp : std::ranges::split_view(path_view, delim))
         {
-            const auto tmp_rdoc_path = std::filesystem::path(std::format("{}\\renderdoc.dll",
-                                                             std::string_view(comp.data(), comp.size())));
+            const auto tmp_rdoc_path =
+                std::filesystem::path(std::format("{}\\renderdoc.dll", std::string_view(comp.data(), comp.size())));
 
             __LOG_TRACE("Looking for renderdoc.dll at: " __FMT_WSTR "", tmp_rdoc_path.c_str());
 
@@ -3302,8 +3529,7 @@ inline RenderDocIntegration::RenderDocIntegration()
         return;
     }
 
-    auto get_api = reinterpret_cast<GetApiFn>(GetProcAddress(static_cast<HMODULE>(this->_module),
-                                                             "RENDERDOC_GetAPI"));
+    auto get_api = reinterpret_cast<GetApiFn>(GetProcAddress(static_cast<HMODULE>(this->_module), "RENDERDOC_GetAPI"));
 #else
     return;
 #endif // defined(PROSERPINE_PLATFORM_LINUX)
@@ -3329,7 +3555,7 @@ inline RenderDocIntegration::RenderDocIntegration()
     return;
 }
 
-inline void RenderDocIntegration::start_capture()
+PROSERPINE_INLINE void RenderDocIntegration::start_capture()
 {
     if(this->_api == nullptr)
         return;
@@ -3338,7 +3564,7 @@ inline void RenderDocIntegration::start_capture()
     // We use offset-based access to avoid including the renderdoc header
     // Offset of StartFrameCapture in RENDERDOC_API_1_6_0 struct
 
-    using StartCaptureFn = void(*)(void*, void*);
+    using StartCaptureFn = void (*)(void*, void*);
 
     auto fn_table = static_cast<void**>(this->_api);
     auto start_fn = reinterpret_cast<StartCaptureFn>(fn_table[14]);
@@ -3350,14 +3576,14 @@ inline void RenderDocIntegration::start_capture()
     }
 }
 
-inline void RenderDocIntegration::end_capture()
+PROSERPINE_INLINE void RenderDocIntegration::end_capture()
 {
     if(this->_api == nullptr)
         return;
 
     // EndFrameCapture is at index 15
 
-    using EndCaptureFn = std::uint32_t(*)(void*, void*);
+    using EndCaptureFn = std::uint32_t (*)(void*, void*);
 
     auto fn_table = static_cast<void**>(this->_api);
     auto end_fn = reinterpret_cast<EndCaptureFn>(fn_table[15]);
@@ -3373,18 +3599,18 @@ inline void RenderDocIntegration::end_capture()
 //  Fence implementation
 // ============================================================================
 
-inline Fence::Fence(VkDevice device, bool signaled) : _device(device)
+PROSERPINE_INLINE Fence::Fence(VkDevice device, bool signaled)
+    : _device(device)
 {
     __LOG_TRACE("Fence: Initializing");
 
     VkFenceCreateInfo info{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     info.flags = signaled ? VK_FENCE_CREATE_SIGNALED_BIT : 0;
 
-    PROSERPINE_VK_CHECK_VOID(vkCreateFence(this->_device, &info, nullptr, &this->_fence),
-                             "Failed to create Fence");
+    PROSERPINE_VK_CHECK_VOID(vkCreateFence(this->_device, &info, nullptr, &this->_fence), "Failed to create Fence");
 }
 
-inline Fence::~Fence()
+PROSERPINE_INLINE Fence::~Fence()
 {
     if(this->_device != VK_NULL_HANDLE)
     {
@@ -3395,12 +3621,12 @@ inline Fence::~Fence()
     }
 }
 
-inline Fence::Fence(Fence&& other) noexcept
+PROSERPINE_INLINE Fence::Fence(Fence&& other) noexcept
 {
     __MOVE_AND_NULL(_device, _fence);
 }
 
-inline Fence& Fence::operator=(Fence&& other) noexcept
+PROSERPINE_INLINE Fence& Fence::operator=(Fence&& other) noexcept
 {
     if(this != &other)
     {
@@ -3414,16 +3640,14 @@ inline Fence& Fence::operator=(Fence&& other) noexcept
 //  Buffer implementation
 // ============================================================================
 
-inline Buffer::Buffer(VkDevice device,
-                      VkPhysicalDevice physical_device,
-                      const Buffer::CreateInfo& info) : _device(device),
-                                                      _size(info.size)
+PROSERPINE_INLINE Buffer::Buffer(VkDevice device, VkPhysicalDevice physical_device, const Buffer::CreateInfo& info)
+    : _device(device),
+      _size(info.size)
 {
-    __LOG_TRACE("Buffer: Initializing Buffer (device: " __FMT_U64H ")",
-                reinterpret_cast<std::uint64_t>(this->_device));
+    __LOG_TRACE("Buffer: Initializing Buffer (device: " __FMT_U64H ")", reinterpret_cast<std::uint64_t>(this->_device));
 
     VkBufferCreateInfo create_info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-    create_info.size  = info.size;
+    create_info.size = info.size;
     create_info.usage = info.usage;
     create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -3437,10 +3661,8 @@ inline Buffer::Buffer(VkDevice device,
     vkGetBufferMemoryRequirements(this->_device, this->_buffer, &mem_req);
 
     VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-    alloc.allocationSize  = mem_req.size;
-    alloc.memoryTypeIndex = find_memory_type(physical_device,
-                                             mem_req.memoryTypeBits,
-                                             info.memory_flags);
+    alloc.allocationSize = mem_req.size;
+    alloc.memoryTypeIndex = find_memory_type(physical_device, mem_req.memoryTypeBits, info.memory_flags);
 
     VkMemoryAllocateFlagsInfo flags_info{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO};
 
@@ -3467,7 +3689,7 @@ inline Buffer::Buffer(VkDevice device,
     }
 }
 
-inline Buffer::~Buffer()
+PROSERPINE_INLINE Buffer::~Buffer()
 {
     if(this->_device != VK_NULL_HANDLE)
     {
@@ -3488,13 +3710,13 @@ inline Buffer::~Buffer()
     }
 }
 
-inline Buffer::Buffer(Buffer&& other) noexcept
+PROSERPINE_INLINE Buffer::Buffer(Buffer&& other) noexcept
 {
     __MOVE_AND_NULL(_device, _buffer, _memory, _mapped);
     __MOVE_AND_ZERO(_size, _device_address);
 }
 
-inline Buffer& Buffer::operator=(Buffer&& other) noexcept
+PROSERPINE_INLINE Buffer& Buffer::operator=(Buffer&& other) noexcept
 {
     if(this != &other)
     {
@@ -3521,14 +3743,12 @@ inline Buffer& Buffer::operator=(Buffer&& other) noexcept
 //  Image implementation
 // ============================================================================
 
-inline Image::Image(VkDevice device,
-                    VkPhysicalDevice physical_device,
-                    const Image::CreateInfo& info) : _device(device),
-                                                   _format(info.format),
-                                                   _extent(info.extent)
+PROSERPINE_INLINE Image::Image(VkDevice device, VkPhysicalDevice physical_device, const Image::CreateInfo& info)
+    : _device(device),
+      _format(info.format),
+      _extent(info.extent)
 {
-    __LOG_TRACE("Image: Initializing Image (device: " __FMT_U64H ")",
-                reinterpret_cast<std::uint64_t>(device));
+    __LOG_TRACE("Image: Initializing Image (device: " __FMT_U64H ")", reinterpret_cast<std::uint64_t>(device));
 
     VkImageCreateInfo create_info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     create_info.imageType = info.type;
@@ -3548,10 +3768,8 @@ inline Image::Image(VkDevice device,
     vkGetImageMemoryRequirements(this->_device, this->_image, &mem_req);
 
     VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-    alloc.allocationSize  = mem_req.size;
-    alloc.memoryTypeIndex = find_memory_type(physical_device,
-                                             mem_req.memoryTypeBits,
-                                             info.memory_flags);
+    alloc.allocationSize = mem_req.size;
+    alloc.memoryTypeIndex = find_memory_type(physical_device, mem_req.memoryTypeBits, info.memory_flags);
 
     PROSERPINE_VK_CHECK_VOID(vkAllocateMemory(this->_device, &alloc, nullptr, &this->_memory),
                              "Failed to allocate image memory");
@@ -3570,15 +3788,13 @@ inline Image::Image(VkDevice device,
 
     if(info.type == VK_IMAGE_TYPE_1D)
         view_create_info.viewType = info.array_layers > 1 ? VK_IMAGE_VIEW_TYPE_1D_ARRAY : VK_IMAGE_VIEW_TYPE_1D;
-    else if (info.type == VK_IMAGE_TYPE_2D)
+    else if(info.type == VK_IMAGE_TYPE_2D)
         view_create_info.viewType = info.array_layers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
     else
         view_create_info.viewType = VK_IMAGE_VIEW_TYPE_3D;
 
-    if(info.format == VK_FORMAT_D16_UNORM ||
-       info.format == VK_FORMAT_D32_SFLOAT ||
-       info.format == VK_FORMAT_D16_UNORM_S8_UINT ||
-       info.format == VK_FORMAT_D24_UNORM_S8_UINT ||
+    if(info.format == VK_FORMAT_D16_UNORM || info.format == VK_FORMAT_D32_SFLOAT ||
+       info.format == VK_FORMAT_D16_UNORM_S8_UINT || info.format == VK_FORMAT_D24_UNORM_S8_UINT ||
        info.format == VK_FORMAT_D32_SFLOAT_S8_UINT)
         view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 
@@ -3586,12 +3802,11 @@ inline Image::Image(VkDevice device,
                              "Failed to create image view");
 }
 
-inline Image::~Image()
+PROSERPINE_INLINE Image::~Image()
 {
     if(this->_device != VK_NULL_HANDLE)
     {
-        __LOG_TRACE("Image: Destroying Image (device: " __FMT_U64H ")",
-                    reinterpret_cast<std::uint64_t>(this->_device));
+        __LOG_TRACE("Image: Destroying Image (device: " __FMT_U64H ")", reinterpret_cast<std::uint64_t>(this->_device));
 
         if(this->_view != VK_NULL_HANDLE)
             vkDestroyImageView(this->_device, this->_view, nullptr);
@@ -3604,22 +3819,22 @@ inline Image::~Image()
     }
 }
 
-inline Image::Image(Image&& other) noexcept
+PROSERPINE_INLINE Image::Image(Image&& other) noexcept
 {
     __MOVE_AND_NULL(_device, _image, _view, _memory);
     __MOVE(_format, _extent);
 }
 
-inline Image& Image::operator=(Image&& other) noexcept
+PROSERPINE_INLINE Image& Image::operator=(Image&& other) noexcept
 {
     if(this != &other)
     {
         if(this->_device != VK_NULL_HANDLE)
         {
-            if(this->_view   != VK_NULL_HANDLE)
+            if(this->_view != VK_NULL_HANDLE)
                 vkDestroyImageView(this->_device, this->_view, nullptr);
 
-            if(this->_image  != VK_NULL_HANDLE)
+            if(this->_image != VK_NULL_HANDLE)
                 vkDestroyImage(this->_device, this->_image, nullptr);
 
             if(this->_memory != VK_NULL_HANDLE)
@@ -3637,15 +3852,16 @@ inline Image& Image::operator=(Image&& other) noexcept
 //  StagingBufferManager implementation
 // ============================================================================
 
-inline StagingBufferManager::StagingBufferManager(VkDevice device,
-                                                  VkPhysicalDevice physical_device,
-                                                  VkQueue transfer_queue,
-                                                  std::uint32_t transfer_family,
-                                                  VkDeviceSize capacity) : _device(device),
-                                                                           _physical_device(physical_device),
-                                                                           _transfer_queue(transfer_queue),
-                                                                           _transfer_family(transfer_family),
-                                                                           _capacity(capacity)
+PROSERPINE_INLINE StagingBufferManager::StagingBufferManager(VkDevice device,
+                                                             VkPhysicalDevice physical_device,
+                                                             VkQueue transfer_queue,
+                                                             std::uint32_t transfer_family,
+                                                             VkDeviceSize capacity)
+    : _device(device),
+      _physical_device(physical_device),
+      _transfer_queue(transfer_queue),
+      _transfer_family(transfer_family),
+      _capacity(capacity)
 {
     __LOG_TRACE("StagingBufferManager: Initializing StagingBufferManager (device: " __FMT_U64H ")",
                 reinterpret_cast<std::uint64_t>(device));
@@ -3662,10 +3878,11 @@ inline StagingBufferManager::StagingBufferManager(VkDevice device,
     vkGetBufferMemoryRequirements(this->_device, this->_staging_buffer, &mem_req);
 
     VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-    alloc.allocationSize  = mem_req.size;
-    alloc.memoryTypeIndex = find_memory_type(this->_physical_device, mem_req.memoryTypeBits,
-                                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    alloc.allocationSize = mem_req.size;
+    alloc.memoryTypeIndex =
+        find_memory_type(this->_physical_device,
+                         mem_req.memoryTypeBits,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
     PROSERPINE_VK_CHECK_VOID(vkAllocateMemory(this->_device, &alloc, nullptr, &this->_staging_memory),
                              "Failed to allocate staging memory");
@@ -3685,7 +3902,7 @@ inline StagingBufferManager::StagingBufferManager(VkDevice device,
                              "Failed to create staging fence");
 }
 
-inline StagingBufferManager::~StagingBufferManager()
+PROSERPINE_INLINE StagingBufferManager::~StagingBufferManager()
 {
     if(this->_device != VK_NULL_HANDLE)
     {
@@ -3712,27 +3929,33 @@ inline StagingBufferManager::~StagingBufferManager()
     }
 }
 
-inline StagingBufferManager::StagingBufferManager(StagingBufferManager&& other) noexcept
+PROSERPINE_INLINE StagingBufferManager::StagingBufferManager(StagingBufferManager&& other) noexcept
 {
     __MOVE_AND_NULL(_device, _physical_device, _staging_buffer, _staging_memory, _staging_mapped, _command_pool, _fence);
     __MOVE(_transfer_queue, _transfer_family, _capacity, _used, _pending);
 }
 
-inline StagingBufferManager& StagingBufferManager::operator=(StagingBufferManager&& other) noexcept
+PROSERPINE_INLINE StagingBufferManager& StagingBufferManager::operator=(StagingBufferManager&& other) noexcept
 {
     if(this != &other)
     {
-        __MOVE_AND_NULL(_device, _physical_device, _staging_buffer, _staging_memory, _staging_mapped, _command_pool, _fence);
+        __MOVE_AND_NULL(_device,
+                        _physical_device,
+                        _staging_buffer,
+                        _staging_memory,
+                        _staging_mapped,
+                        _command_pool,
+                        _fence);
         __MOVE(_transfer_queue, _transfer_family, _capacity, _used, _pending);
     }
 
     return *this;
 }
 
-inline void StagingBufferManager::upload_to_buffer(const void* data,
-                                                   VkDeviceSize size,
-                                                   VkBuffer dst,
-                                                   VkDeviceSize dst_offset)
+PROSERPINE_INLINE void StagingBufferManager::upload_to_buffer(const void* data,
+                                                              VkDeviceSize size,
+                                                              VkBuffer dst,
+                                                              VkDeviceSize dst_offset)
 {
     __LOG_TRACE("StagingBufferManager: uploading to buffer");
 
@@ -3743,20 +3966,23 @@ inline void StagingBufferManager::upload_to_buffer(const void* data,
     std::memcpy(static_cast<char*>(this->_staging_mapped) + offset, data, size);
     this->_used += size;
 
-    this->_pending.push_back({offset, size, [=, this](VkCommandBuffer cmd) {
-        VkBufferCopy region{};
-        region.srcOffset = offset;
-        region.dstOffset = dst_offset;
-        region.size = size;
-        vkCmdCopyBuffer(cmd, this->_staging_buffer, dst, 1, &region);
-    }});
+    this->_pending.push_back({offset,
+                              size,
+                              [=, this](VkCommandBuffer cmd)
+                              {
+                                  VkBufferCopy region{};
+                                  region.srcOffset = offset;
+                                  region.dstOffset = dst_offset;
+                                  region.size = size;
+                                  vkCmdCopyBuffer(cmd, this->_staging_buffer, dst, 1, &region);
+                              }});
 }
 
-inline void StagingBufferManager::upload_to_image(const void* data,
-                                                  const VkExtent3D& extent,
-                                                  VkFormat format,
-                                                  VkImage dst,
-                                                  VkImageSubresourceLayers layers)
+PROSERPINE_INLINE void StagingBufferManager::upload_to_image(const void* data,
+                                                             const VkExtent3D& extent,
+                                                             VkFormat format,
+                                                             VkImage dst,
+                                                             VkImageSubresourceLayers layers)
 {
     __LOG_TRACE("StagingBufferManager: uploading to image");
 
@@ -3765,16 +3991,30 @@ inline void StagingBufferManager::upload_to_image(const void* data,
 
     switch(format)
     {
-        case VK_FORMAT_R8_UNORM: texel_size = 1; break;
-        case VK_FORMAT_R8G8_UNORM: texel_size = 2; break;
-        case VK_FORMAT_R8G8B8_UNORM: texel_size = 3; break;
+        case VK_FORMAT_R8_UNORM:
+            texel_size = 1;
+            break;
+        case VK_FORMAT_R8G8_UNORM:
+            texel_size = 2;
+            break;
+        case VK_FORMAT_R8G8B8_UNORM:
+            texel_size = 3;
+            break;
         case VK_FORMAT_R8G8B8A8_UNORM:
         case VK_FORMAT_B8G8R8A8_UNORM:
         case VK_FORMAT_R8G8B8A8_SRGB:
-        case VK_FORMAT_B8G8R8A8_SRGB: texel_size = 4; break;
-        case VK_FORMAT_R16G16B16A16_SFLOAT: texel_size = 8; break;
-        case VK_FORMAT_R32G32B32A32_SFLOAT: texel_size = 16; break;
-        default: texel_size = 4; break;
+        case VK_FORMAT_B8G8R8A8_SRGB:
+            texel_size = 4;
+            break;
+        case VK_FORMAT_R16G16B16A16_SFLOAT:
+            texel_size = 8;
+            break;
+        case VK_FORMAT_R32G32B32A32_SFLOAT:
+            texel_size = 16;
+            break;
+        default:
+            texel_size = 4;
+            break;
     }
 
     VkDeviceSize size = extent.width * extent.height * extent.depth * texel_size;
@@ -3788,70 +4028,72 @@ inline void StagingBufferManager::upload_to_image(const void* data,
 
     VkBuffer staging_buf = this->_staging_buffer;
 
-    this->_pending.push_back({offset, size, [=](VkCommandBuffer cmd) {
-        VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = dst;
-        barrier.subresourceRange = {layers.aspectMask, layers.mipLevel, 1, layers.baseArrayLayer, layers.layerCount};
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    this->_pending.push_back(
+        {offset,
+         size,
+         [=](VkCommandBuffer cmd)
+         {
+             VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+             barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+             barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+             barrier.image = dst;
+             barrier.subresourceRange = {layers.aspectMask,
+                                         layers.mipLevel,
+                                         1,
+                                         layers.baseArrayLayer,
+                                         layers.layerCount};
+             barrier.srcAccessMask = 0;
+             barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
-        vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             0,
-                             0,
-                             nullptr,
-                             0,
-                             nullptr,
-                             1,
-                             &barrier);
+             vkCmdPipelineBarrier(cmd,
+                                  VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                  VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                  0,
+                                  0,
+                                  nullptr,
+                                  0,
+                                  nullptr,
+                                  1,
+                                  &barrier);
 
-        VkBufferImageCopy region{};
-        region.bufferOffset = offset;
-        region.bufferRowLength = 0;
-        region.bufferImageHeight = 0;
-        region.imageSubresource = layers;
-        region.imageOffset = {0, 0, 0};
-        region.imageExtent = extent;
+             VkBufferImageCopy region{};
+             region.bufferOffset = offset;
+             region.bufferRowLength = 0;
+             region.bufferImageHeight = 0;
+             region.imageSubresource = layers;
+             region.imageOffset = {0, 0, 0};
+             region.imageExtent = extent;
 
-        vkCmdCopyBufferToImage(cmd,
-                               staging_buf,
-                               dst,
-                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                               1,
-                               &region);
+             vkCmdCopyBufferToImage(cmd, staging_buf, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+             barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+             barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+             barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+             barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-        vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                             0,
-                             0,
-                             nullptr,
-                             0,
-                             nullptr,
-                             1,
-                             &barrier);
-    }});
+             vkCmdPipelineBarrier(cmd,
+                                  VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                  VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                  0,
+                                  0,
+                                  nullptr,
+                                  0,
+                                  nullptr,
+                                  1,
+                                  &barrier);
+         }});
 }
 
-inline void StagingBufferManager::flush()
+PROSERPINE_INLINE void StagingBufferManager::flush()
 {
     // TODO: use context command buffer from immediate context
 
     if(this->_pending.empty())
         return;
 
-    __LOG_TRACE("StagingBufferManager: Flushing (pending: " __FMT_U64 ")",
-                this->_pending.size());
+    __LOG_TRACE("StagingBufferManager: Flushing (pending: " __FMT_U64 ")", this->_pending.size());
 
     VkCommandBufferAllocateInfo alloc{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
     alloc.commandPool = this->_command_pool;
@@ -3890,22 +4132,22 @@ inline void StagingBufferManager::flush()
 //  Descriptor Pool implementation
 // =============================================================================
 
-inline DescriptorPool::DescriptorPool()
+PROSERPINE_INLINE DescriptorPool::DescriptorPool()
 {
     __LOG_TRACE("DescriptorPool: Initializing DescriptorPool");
 }
 
-inline DescriptorPool::DescriptorPool(VkDevice device,
-                                      DescriptorPool::CreateInfo& create_info) : _device(device)
+PROSERPINE_INLINE DescriptorPool::DescriptorPool(VkDevice device, DescriptorPool::CreateInfo& create_info)
+    : _device(device)
 {
     __LOG_TRACE("DescriptorPool: Initializing DescriptorPool (device: " __FMT_U64H ")",
                 reinterpret_cast<std::uint64_t>(this->_device));
 
-    VkDescriptorPoolSize default_pool_sizes[] = { { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, DescriptorPool::DEFAULT_SETS_SIZE } };
+    VkDescriptorPoolSize default_pool_sizes[] = {
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, DescriptorPool::DEFAULT_SETS_SIZE}};
 
     VkDescriptorPoolCreateInfo info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    info.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT |
-                 VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    info.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     info.maxSets = create_info.max_sets;
     info.poolSizeCount = create_info.pool_size_count;
     info.pPoolSizes = create_info.sizes == nullptr ? default_pool_sizes : create_info.sizes;
@@ -3914,7 +4156,7 @@ inline DescriptorPool::DescriptorPool(VkDevice device,
                              "Failed to create VkDescriptorPool");
 }
 
-inline DescriptorPool::~DescriptorPool()
+PROSERPINE_INLINE DescriptorPool::~DescriptorPool()
 {
     if(this->_device != VK_NULL_HANDLE)
     {
@@ -3925,8 +4167,7 @@ inline DescriptorPool::~DescriptorPool()
         {
             if(this->_sets.size() > 0)
             {
-                __LOG_TRACE("DescriptorPool: Freeing " __FMT_U64 " descriptor sets",
-                            this->_sets.size());
+                __LOG_TRACE("DescriptorPool: Freeing " __FMT_U64 " descriptor sets", this->_sets.size());
 
                 vkFreeDescriptorSets(this->_device,
                                      this->_pool,
@@ -3939,12 +4180,12 @@ inline DescriptorPool::~DescriptorPool()
     }
 }
 
-inline DescriptorPool::DescriptorPool(DescriptorPool&& other) noexcept
+PROSERPINE_INLINE DescriptorPool::DescriptorPool(DescriptorPool&& other) noexcept
 {
     __MOVE_AND_NULL(_device, _pool);
 }
 
-inline DescriptorPool& DescriptorPool::operator=(DescriptorPool&& other) noexcept
+PROSERPINE_INLINE DescriptorPool& DescriptorPool::operator=(DescriptorPool&& other) noexcept
 {
     if(this != &other)
     {
@@ -3954,8 +4195,7 @@ inline DescriptorPool& DescriptorPool::operator=(DescriptorPool&& other) noexcep
     return *this;
 }
 
-
-inline Expected<DescriptorSet> DescriptorPool::allocate_descriptor_set(VkDescriptorSetLayout layout)
+PROSERPINE_INLINE Expected<DescriptorSet> DescriptorPool::allocate_descriptor_set(VkDescriptorSetLayout layout)
 {
     __LOG_TRACE("DescriptorPool: Allocating a descriptor set (layout: " __FMT_U64H ")",
                 reinterpret_cast<std::uint64_t>(layout));
@@ -3982,17 +4222,17 @@ inline Expected<DescriptorSet> DescriptorPool::allocate_descriptor_set(VkDescrip
 //  Descriptor Set implementation
 // =============================================================================
 
-inline DescriptorSet::DescriptorSet(DescriptorSet&& other) noexcept
+PROSERPINE_INLINE DescriptorSet::DescriptorSet(DescriptorSet&& other) noexcept
 {
     __MOVE_AND_NULL(_device, _set);
     __MOVE(_writes, _buffer_infos);
 }
 
-inline DescriptorSet::~DescriptorSet()
+PROSERPINE_INLINE DescriptorSet::~DescriptorSet()
 {
 }
 
-inline DescriptorSet& DescriptorSet::operator=(DescriptorSet&& other) noexcept
+PROSERPINE_INLINE DescriptorSet& DescriptorSet::operator=(DescriptorSet&& other) noexcept
 {
     if(this != &other)
     {
@@ -4003,27 +4243,26 @@ inline DescriptorSet& DescriptorSet::operator=(DescriptorSet&& other) noexcept
     return *this;
 }
 
-inline DescriptorSet& DescriptorSet::write(std::uint32_t binding,
-                                           const Buffer& buffer,
-                                           VkDescriptorType type,
-                                           VkDeviceSize offset,
-                                           VkDeviceSize range)
+PROSERPINE_INLINE DescriptorSet& DescriptorSet::write(std::uint32_t binding,
+                                                      const Buffer& buffer,
+                                                      VkDescriptorType type,
+                                                      VkDeviceSize offset,
+                                                      VkDeviceSize range)
 {
     __LOG_TRACE("Adding a Write Descriptor Set: binding: " __FMT_U32 ", type: " __FMT_U32 "",
                 binding,
                 static_cast<std::uint32_t>(type));
 
-    this->_buffer_infos.push_back({ buffer.handle(), offset, range });
+    this->_buffer_infos.push_back({buffer.handle(), offset, range});
 
-    this->_writes.push_back({ binding, type, this->_buffer_infos.size() - 1 });
+    this->_writes.push_back({binding, type, this->_buffer_infos.size() - 1});
 
     return *this;
 }
 
-inline DescriptorSet& DescriptorSet::update()
+PROSERPINE_INLINE DescriptorSet& DescriptorSet::update()
 {
-    __LOG_TRACE("Updating Descriptor Set (" __FMT_U64 " writes)",
-                this->_writes.size());
+    __LOG_TRACE("Updating Descriptor Set (" __FMT_U64 " writes)", this->_writes.size());
 
     std::vector<VkWriteDescriptorSet> writes;
 
@@ -4043,11 +4282,7 @@ inline DescriptorSet& DescriptorSet::update()
         writes.push_back(write);
     }
 
-    vkUpdateDescriptorSets(this->_device,
-                           static_cast<std::uint32_t>(writes.size()),
-                           writes.data(),
-                           0,
-                           nullptr);
+    vkUpdateDescriptorSets(this->_device, static_cast<std::uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
     this->_writes.clear();
     this->_buffer_infos.clear();
@@ -4059,11 +4294,10 @@ inline DescriptorSet& DescriptorSet::update()
 //  Command Buffer implementation
 // =============================================================================
 
-inline CommandBuffer::CommandBuffer(VkDevice device,
-                                    VkCommandPool pool,
-                                    CommandBuffer::Level level) : _device(device),
-                                                                  _pool(pool),
-                                                                  _state(State::Initial)
+PROSERPINE_INLINE CommandBuffer::CommandBuffer(VkDevice device, VkCommandPool pool, CommandBuffer::Level level)
+    : _device(device),
+      _pool(pool),
+      _state(State::Initial)
 {
     VkCommandBufferAllocateInfo info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
     info.commandBufferCount = 1;
@@ -4080,7 +4314,7 @@ inline CommandBuffer::CommandBuffer(VkDevice device,
     this->_state = State::Initial;
 }
 
-inline CommandBuffer::~CommandBuffer()
+PROSERPINE_INLINE CommandBuffer::~CommandBuffer()
 {
     if(this->_device != VK_NULL_HANDLE)
     {
@@ -4090,13 +4324,13 @@ inline CommandBuffer::~CommandBuffer()
     }
 }
 
-inline CommandBuffer::CommandBuffer(CommandBuffer&& other) noexcept
+PROSERPINE_INLINE CommandBuffer::CommandBuffer(CommandBuffer&& other) noexcept
 {
     __MOVE_AND_NULL(_device, _pool, _buffer);
     __MOVE(_state);
 }
 
-inline CommandBuffer& CommandBuffer::operator=(CommandBuffer&& other) noexcept
+PROSERPINE_INLINE CommandBuffer& CommandBuffer::operator=(CommandBuffer&& other) noexcept
 {
     if(this != &other)
     {
@@ -4107,43 +4341,41 @@ inline CommandBuffer& CommandBuffer::operator=(CommandBuffer&& other) noexcept
     return *this;
 }
 
-inline void CommandBuffer::reset()
+PROSERPINE_INLINE void CommandBuffer::reset()
 {
-    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL", );
 
     this->_state = State::Initial;
     vkResetCommandBuffer(this->_buffer, 0);
 }
 
-inline void CommandBuffer::begin(VkCommandBufferUsageFlags flags)
+PROSERPINE_INLINE void CommandBuffer::begin(VkCommandBufferUsageFlags flags)
 {
-    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
-    PROSERPINE_ASSERT(this->_state == State::Initial, "CommandBuffer is not in initial state",);
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL", );
+    PROSERPINE_ASSERT(this->_state == State::Initial, "CommandBuffer is not in initial state", );
 
     this->_state = State::Recording;
 
     VkCommandBufferBeginInfo info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     info.flags = flags;
 
-    PROSERPINE_VK_CHECK_VOID(vkBeginCommandBuffer(this->_buffer, &info),
-                             "Failed to begin CommandBuffer recording");
+    PROSERPINE_VK_CHECK_VOID(vkBeginCommandBuffer(this->_buffer, &info), "Failed to begin CommandBuffer recording");
 }
 
-inline void CommandBuffer::end()
+PROSERPINE_INLINE void CommandBuffer::end()
 {
-    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
-    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state",);
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL", );
+    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state", );
 
     this->_state = State::Executable;
 
-    PROSERPINE_VK_CHECK_VOID(vkEndCommandBuffer(this->_buffer),
-                             "Failed to end CommandBuffer recording");
+    PROSERPINE_VK_CHECK_VOID(vkEndCommandBuffer(this->_buffer), "Failed to end CommandBuffer recording");
 }
 
-inline void CommandBuffer::transition_image(VkImage image,
-                                            VkImageLayout old_layout,
-                                            VkImageLayout new_layout,
-                                            VkImageAspectFlags aspect)
+PROSERPINE_INLINE void CommandBuffer::transition_image(VkImage image,
+                                                       VkImageLayout old_layout,
+                                                       VkImageLayout new_layout,
+                                                       VkImageAspectFlags aspect)
 {
     VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     barrier.oldLayout = old_layout;
@@ -4160,50 +4392,44 @@ inline void CommandBuffer::transition_image(VkImage image,
     VkPipelineStageFlags src_stage;
     VkPipelineStageFlags dst_stage;
 
-    if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED &&
-       new_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+    if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
     {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
         src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     }
-    else if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED &&
-            new_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL)
+    else if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL)
     {
         barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        barrier.dstAccessMask =
+            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         dst_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     }
-    else if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED &&
-            new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+    else if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
     {
         barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        barrier.dstAccessMask =
+            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         dst_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     }
-    else if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED &&
-            new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    else if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
     {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     }
-    else if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED &&
-            new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+    else if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
     {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     }
-    else if(old_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL &&
-            new_layout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
+    else if(old_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
     {
         barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
         barrier.dstAccessMask = 0;
@@ -4226,8 +4452,7 @@ inline void CommandBuffer::transition_image(VkImage image,
         src_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     }
-    else if(old_layout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR &&
-            new_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+    else if(old_layout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR && new_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
     {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
@@ -4286,32 +4511,23 @@ inline void CommandBuffer::transition_image(VkImage image,
             new_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL)
     {
         barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        barrier.dstAccessMask =
+            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         src_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
         dst_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     }
     else
     {
-        PROSERPINE_ASSERT(false, "Unsupported layout transition",);
+        PROSERPINE_ASSERT(false, "Unsupported layout transition", );
     }
 
-    vkCmdPipelineBarrier(this->_buffer,
-                         src_stage,
-                         dst_stage,
-                         0,
-                         0,
-                         nullptr,
-                         0,
-                         nullptr,
-                         1,
-                         &barrier);
+    vkCmdPipelineBarrier(this->_buffer, src_stage, dst_stage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
-inline void CommandBuffer::begin_render(const RenderingInfo& info)
+PROSERPINE_INLINE void CommandBuffer::begin_render(const RenderingInfo& info)
 {
-    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
-    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state",);
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL", );
+    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state", );
 
     std::vector<VkRenderingAttachmentInfo> colors;
     colors.reserve(info.color_attachments.size());
@@ -4357,41 +4573,41 @@ inline void CommandBuffer::begin_render(const RenderingInfo& info)
     vkCmdBeginRendering(this->_buffer, &render_info);
 }
 
-inline void CommandBuffer::end_render()
+PROSERPINE_INLINE void CommandBuffer::end_render()
 {
-    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
-    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state",);
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL", );
+    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state", );
 
     __LOG_TRACE("CommandBuffer: Ending render");
 
     vkCmdEndRendering(this->_buffer);
 }
 
-inline void CommandBuffer::bind_graphics_pipeline(VkPipeline pipeline)
+PROSERPINE_INLINE void CommandBuffer::bind_graphics_pipeline(VkPipeline pipeline)
 {
-    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
-    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state",);
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL", );
+    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state", );
 
     vkCmdBindPipeline(this->_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 }
 
-inline void CommandBuffer::bind_compute_pipeline(VkPipeline pipeline)
+PROSERPINE_INLINE void CommandBuffer::bind_compute_pipeline(VkPipeline pipeline)
 {
-    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
-    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state",);
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL", );
+    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state", );
 
     vkCmdBindPipeline(this->_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
 }
 
-inline void CommandBuffer::set_viewport(float width,
-                                        float height,
-                                        float x,
-                                        float y,
-                                        float min_depth,
-                                        float max_depth)
+PROSERPINE_INLINE void CommandBuffer::set_viewport(float width,
+                                                   float height,
+                                                   float x,
+                                                   float y,
+                                                   float min_depth,
+                                                   float max_depth)
 {
-    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
-    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state",);
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL", );
+    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state", );
 
     VkViewport viewport{};
     viewport.x = x;
@@ -4404,31 +4620,34 @@ inline void CommandBuffer::set_viewport(float width,
     vkCmdSetViewport(this->_buffer, 0, 1, &viewport);
 }
 
-inline void CommandBuffer::set_scissor(std::uint32_t width,
-                                       std::uint32_t height,
-                                       std::int32_t offset_x,
-                                       std::int32_t offset_y)
+PROSERPINE_INLINE void CommandBuffer::set_scissor(std::uint32_t width,
+                                                  std::uint32_t height,
+                                                  std::int32_t offset_x,
+                                                  std::int32_t offset_y)
 {
-    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
-    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state",);
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL", );
+    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state", );
 
     VkRect2D scissor{};
-    scissor.offset = { offset_x, offset_y };
-    scissor.extent = { width, height };
+    scissor.offset = {offset_x, offset_y};
+    scissor.extent = {width, height};
 
     vkCmdSetScissor(this->_buffer, 0, 1, &scissor);
 }
 
-inline void CommandBuffer::draw(std::uint32_t vertex_count,
-                                std::uint32_t instance_count,
-                                std::uint32_t first_vertex,
-                                std::uint32_t first_instance)
+PROSERPINE_INLINE void CommandBuffer::draw(std::uint32_t vertex_count,
+                                           std::uint32_t instance_count,
+                                           std::uint32_t first_vertex,
+                                           std::uint32_t first_instance)
 {
-    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL",);
-    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state",);
+    PROSERPINE_ASSERT(this->_buffer != VK_NULL_HANDLE, "buffer is NULL", );
+    PROSERPINE_ASSERT(this->_state == State::Recording, "CommandBuffer is not in recording state", );
 
     __LOG_TRACE("CommandBuffer: drawcall (" __FMT_U32 "," __FMT_U32 "," __FMT_U32 "," __FMT_U32 ")",
-                vertex_count, instance_count, first_vertex, first_instance);
+                vertex_count,
+                instance_count,
+                first_vertex,
+                first_instance);
 
     vkCmdDraw(this->_buffer, vertex_count, instance_count, first_vertex, first_instance);
 }
@@ -4437,7 +4656,8 @@ inline void CommandBuffer::draw(std::uint32_t vertex_count,
 //  Command Pool implementation
 // =============================================================================
 
-inline CommandPool::CommandPool(VkDevice device, std::uint32_t queue_family_index) : _device(device)
+PROSERPINE_INLINE CommandPool::CommandPool(VkDevice device, std::uint32_t queue_family_index)
+    : _device(device)
 {
     __LOG_TRACE("CommandPool: Initializing");
 
@@ -4449,7 +4669,7 @@ inline CommandPool::CommandPool(VkDevice device, std::uint32_t queue_family_inde
                              "Failed to create CommandPool");
 }
 
-inline CommandPool::~CommandPool()
+PROSERPINE_INLINE CommandPool::~CommandPool()
 {
     if(this->_device != VK_NULL_HANDLE)
     {
@@ -4460,12 +4680,12 @@ inline CommandPool::~CommandPool()
     }
 }
 
-inline CommandPool::CommandPool(CommandPool&& other) noexcept
+PROSERPINE_INLINE CommandPool::CommandPool(CommandPool&& other) noexcept
 {
     __MOVE_AND_NULL(_device, _pool);
 }
 
-inline CommandPool& CommandPool::operator=(CommandPool&& other) noexcept
+PROSERPINE_INLINE CommandPool& CommandPool::operator=(CommandPool&& other) noexcept
 {
     if(this != &other)
     {
@@ -4475,7 +4695,7 @@ inline CommandPool& CommandPool::operator=(CommandPool&& other) noexcept
     return *this;
 }
 
-inline CommandBuffer CommandPool::allocate(CommandBuffer::Level level)
+PROSERPINE_INLINE CommandBuffer CommandPool::allocate(CommandBuffer::Level level)
 {
     return CommandBuffer(this->_device, this->_pool, level);
 }
@@ -4484,7 +4704,8 @@ inline CommandBuffer CommandPool::allocate(CommandBuffer::Level level)
 //  Command Profiler implementation
 // =============================================================================
 
-inline CommandProfiler::CommandProfiler(VkDevice device, VkPhysicalDevice physical_device) : _device(device)
+PROSERPINE_INLINE CommandProfiler::CommandProfiler(VkDevice device, VkPhysicalDevice physical_device)
+    : _device(device)
 {
     __LOG_TRACE("CommandProfiler: Initializing");
 
@@ -4503,11 +4724,10 @@ inline CommandProfiler::CommandProfiler(VkDevice device, VkPhysicalDevice physic
 
     this->_timestamp_period = static_cast<double>(properties.limits.timestampPeriod);
 
-    __LOG_TRACE("CommandProfiler: Initialized (timestamp period: " __FMT_FLT32 ")",
-                this->_timestamp_period);
+    __LOG_TRACE("CommandProfiler: Initialized (timestamp period: " __FMT_FLT32 ")", this->_timestamp_period);
 }
 
-inline CommandProfiler::~CommandProfiler()
+PROSERPINE_INLINE CommandProfiler::~CommandProfiler()
 {
     if(this->_device != VK_NULL_HANDLE)
     {
@@ -4518,12 +4738,12 @@ inline CommandProfiler::~CommandProfiler()
     }
 }
 
-inline CommandProfiler::CommandProfiler(CommandProfiler&& other) noexcept
+PROSERPINE_INLINE CommandProfiler::CommandProfiler(CommandProfiler&& other) noexcept
 {
     __MOVE_AND_NULL(_device, _pool);
 }
 
-inline CommandProfiler& CommandProfiler::operator=(CommandProfiler&& other) noexcept
+PROSERPINE_INLINE CommandProfiler& CommandProfiler::operator=(CommandProfiler&& other) noexcept
 {
     if(this != &other)
     {
@@ -4533,34 +4753,28 @@ inline CommandProfiler& CommandProfiler::operator=(CommandProfiler&& other) noex
     return *this;
 }
 
-inline void CommandProfiler::start(VkCommandBuffer cmd) noexcept
+PROSERPINE_INLINE void CommandProfiler::start(VkCommandBuffer cmd) noexcept
 {
     __LOG_TRACE("CommandProfiler: Writing start timestamp");
 
     PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", );
-    PROSERPINE_ASSERT(this->_pool != VK_NULL_HANDLE, "QueryPool is NULL",);
+    PROSERPINE_ASSERT(this->_pool != VK_NULL_HANDLE, "QueryPool is NULL", );
 
     vkCmdResetQueryPool(cmd, this->_pool, 0, 2);
-    vkCmdWriteTimestamp(cmd,
-                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                        this->_pool,
-                        0);
+    vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, this->_pool, 0);
 }
 
-inline void CommandProfiler::end(VkCommandBuffer cmd) noexcept
+PROSERPINE_INLINE void CommandProfiler::end(VkCommandBuffer cmd) noexcept
 {
     __LOG_TRACE("CommandProfiler: Writing end timestamp");
 
     PROSERPINE_ASSERT(this->_device != VK_NULL_HANDLE, "Device is NULL", );
-    PROSERPINE_ASSERT(this->_pool != VK_NULL_HANDLE, "QueryPool is NULL",);
+    PROSERPINE_ASSERT(this->_pool != VK_NULL_HANDLE, "QueryPool is NULL", );
 
-    vkCmdWriteTimestamp(cmd,
-                        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                        this->_pool,
-                        1);
+    vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, this->_pool, 1);
 }
 
-inline double CommandProfiler::elapsed(ElapsedUnit unit) noexcept
+PROSERPINE_INLINE double CommandProfiler::elapsed(ElapsedUnit unit) noexcept
 {
     __LOG_TRACE("CommandProfiler: Querying results");
 
@@ -4581,10 +4795,17 @@ inline double CommandProfiler::elapsed(ElapsedUnit unit) noexcept
 
     switch(unit)
     {
-        case CommandProfiler::ElapsedUnit::Milliseconds: divisor = 1e6; break;
-        case CommandProfiler::ElapsedUnit::Microseconds: divisor = 1e3; break;
-        case CommandProfiler::ElapsedUnit::Seconds: divisor = 1e9; break;
-        default: break;
+        case CommandProfiler::ElapsedUnit::Milliseconds:
+            divisor = 1e6;
+            break;
+        case CommandProfiler::ElapsedUnit::Microseconds:
+            divisor = 1e3;
+            break;
+        case CommandProfiler::ElapsedUnit::Seconds:
+            divisor = 1e9;
+            break;
+        default:
+            break;
     }
 
     return static_cast<double>(timestamps[1] - timestamps[0]) * this->_timestamp_period / divisor;
@@ -4594,10 +4815,9 @@ inline double CommandProfiler::elapsed(ElapsedUnit unit) noexcept
 //  ShaderModule implementation (with minimal SPIR-V reflection)
 // =============================================================================
 
-inline Expected<SPIRVByteCode> load_spirv_file(const char* file_path) noexcept
+PROSERPINE_INLINE Expected<SPIRVByteCode> load_spirv_file(const char* file_path) noexcept
 {
-    __LOG_TRACE("Loading a SPIR-V bytecode file (" __FMT_STR ")",
-                file_path);
+    __LOG_TRACE("Loading a SPIR-V bytecode file (" __FMT_STR ")", file_path);
 
     SPIRVByteCode spirv;
 
@@ -4622,19 +4842,17 @@ inline Expected<SPIRVByteCode> load_spirv_file(const char* file_path) noexcept
     if(std::ferror(file))
         return Error("Error during read of SPIR-V bytecode file");
 
-    __LOG_TRACE("Loaded SPIR-V bytecode file (" __FMT_STR ")",
-                file_path);
+    __LOG_TRACE("Loaded SPIR-V bytecode file (" __FMT_STR ")", file_path);
 
     return spirv;
 }
 
-inline ShaderModule::ShaderModule()
+PROSERPINE_INLINE ShaderModule::ShaderModule()
 {
     __LOG_TRACE("ShaderModule: Initializing ShaderModule");
 }
 
-inline Expected<ShaderModule> ShaderModule::create_compute_shader(VkDevice device,
-                                                                  const char* path)
+PROSERPINE_INLINE Expected<ShaderModule> ShaderModule::create_compute_shader(VkDevice device, const char* path)
 {
     const auto spirv = load_spirv_file(path);
 
@@ -4644,8 +4862,7 @@ inline Expected<ShaderModule> ShaderModule::create_compute_shader(VkDevice devic
     return ShaderModule::create(device, spirv.value(), VK_SHADER_STAGE_COMPUTE_BIT);
 }
 
-inline Expected<ShaderModule> ShaderModule::create_vertex_shader(VkDevice device,
-                                                                 const char* path)
+PROSERPINE_INLINE Expected<ShaderModule> ShaderModule::create_vertex_shader(VkDevice device, const char* path)
 {
     const auto spirv = load_spirv_file(path);
 
@@ -4655,8 +4872,7 @@ inline Expected<ShaderModule> ShaderModule::create_vertex_shader(VkDevice device
     return ShaderModule::create(device, spirv.value(), VK_SHADER_STAGE_VERTEX_BIT);
 }
 
-inline Expected<ShaderModule> ShaderModule::create_fragment_shader(VkDevice device,
-                                                                   const char* path)
+PROSERPINE_INLINE Expected<ShaderModule> ShaderModule::create_fragment_shader(VkDevice device, const char* path)
 {
     const auto spirv = load_spirv_file(path);
 
@@ -4666,16 +4882,15 @@ inline Expected<ShaderModule> ShaderModule::create_fragment_shader(VkDevice devi
     return ShaderModule::create(device, spirv.value(), VK_SHADER_STAGE_FRAGMENT_BIT);
 }
 
-inline Expected<ShaderModule> ShaderModule::create(VkDevice device,
-                                                   const std::vector<std::uint32_t>& spirv,
-                                                   VkShaderStageFlagBits stage)
+PROSERPINE_INLINE Expected<ShaderModule> ShaderModule::create(VkDevice device,
+                                                              const std::vector<std::uint32_t>& spirv,
+                                                              VkShaderStageFlagBits stage)
 {
-    __LOG_TRACE("ShaderModule: Creating a new shader module (" __FMT_U64H ")",
-                reinterpret_cast<std::uint64_t>(device));
+    __LOG_TRACE("ShaderModule: Creating a new shader module (" __FMT_U64H ")", reinterpret_cast<std::uint64_t>(device));
 
     ShaderModule sm;
     sm._device = device;
-    sm._stage  = stage;
+    sm._stage = stage;
 
     VkShaderModuleCreateInfo ci{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
     ci.codeSize = spirv.size() * sizeof(std::uint32_t);
@@ -4696,7 +4911,7 @@ inline Expected<ShaderModule> ShaderModule::create(VkDevice device,
     return sm;
 }
 
-inline ShaderModule::~ShaderModule()
+PROSERPINE_INLINE ShaderModule::~ShaderModule()
 {
 
     if(this->_module != VK_NULL_HANDLE && this->_device != VK_NULL_HANDLE)
@@ -4706,13 +4921,14 @@ inline ShaderModule::~ShaderModule()
     }
 }
 
-inline ShaderModule::ShaderModule(ShaderModule&& other) noexcept : _stage(other._stage)
+PROSERPINE_INLINE ShaderModule::ShaderModule(ShaderModule&& other) noexcept
+    : _stage(other._stage)
 {
     __MOVE_AND_NULL(_device, _module);
     __MOVE(_set_layouts, _push_ranges, _vertex_inputs);
 }
 
-inline ShaderModule& ShaderModule::operator=(ShaderModule&& other) noexcept
+PROSERPINE_INLINE ShaderModule& ShaderModule::operator=(ShaderModule&& other) noexcept
 {
     if(this != &other)
     {
@@ -4731,7 +4947,7 @@ inline ShaderModule& ShaderModule::operator=(ShaderModule&& other) noexcept
 // Minimal SPIR-V parser for descriptor and push constant reflection.
 // This avoids an external dependency on spirv-reflect.
 // It reads OpDecorate, OpMemberDecorate, OpVariable, and type instructions.
-inline void ShaderModule::reflect_spirv(const std::vector<std::uint32_t>& spirv)
+PROSERPINE_INLINE void ShaderModule::reflect_spirv(const std::vector<std::uint32_t>& spirv)
 {
     __LOG_TRACE("ShaderModule: Reflecting SPIR-V");
 
@@ -4744,8 +4960,7 @@ inline void ShaderModule::reflect_spirv(const std::vector<std::uint32_t>& spirv)
     // SPIR-V magic check
     if(spirv[0] != 0x07230203)
     {
-        __LOG_TRACE("ShaderModule: Unexpected SPIR-V header magic " __FMT_U32 "",
-                    spirv[0]);
+        __LOG_TRACE("ShaderModule: Unexpected SPIR-V header magic " __FMT_U32 "", spirv[0]);
         return;
     }
 
@@ -4804,7 +5019,8 @@ inline void ShaderModule::reflect_spirv(const std::vector<std::uint32_t>& spirv)
     constexpr std::uint32_t SpvStorageClassInput = 1;
     constexpr std::uint32_t SpvStorageClassPushConstant = 9;
 
-    auto find_or_add_decoration = [&](std::uint32_t id) -> DecorationInfo& {
+    auto find_or_add_decoration = [&](std::uint32_t id) -> DecorationInfo&
+    {
         for(auto& d : decorations)
             if(d.id == id)
                 return d;
@@ -4850,35 +5066,35 @@ inline void ShaderModule::reflect_spirv(const std::vector<std::uint32_t>& spirv)
 
             variables.push_back({result_id, type_id, storage_class});
         }
-        else if (opcode == SpvOpTypePointer && length >= 4)
+        else if(opcode == SpvOpTypePointer && length >= 4)
         {
             types.push_back({spirv[i + 1], opcode, spirv[i + 3], 0});
         }
-        else if (opcode == SpvOpTypeSampledImage && length >= 3)
+        else if(opcode == SpvOpTypeSampledImage && length >= 3)
         {
             types.push_back({spirv[i + 1], opcode, spirv[i + 2], 0});
         }
-        else if (opcode == SpvOpTypeImage && length >= 3)
+        else if(opcode == SpvOpTypeImage && length >= 3)
         {
             types.push_back({spirv[i + 1], opcode, 0, 0});
         }
-        else if (opcode == SpvOpTypeSampler && length >= 2)
+        else if(opcode == SpvOpTypeSampler && length >= 2)
         {
             types.push_back({spirv[i + 1], opcode, 0, 0});
         }
-        else if (opcode == SpvOpTypeStruct)
+        else if(opcode == SpvOpTypeStruct)
         {
             types.push_back({spirv[i + 1], opcode, 0, 0});
         }
-        else if (opcode == SpvOpTypeArray && length >= 4)
+        else if(opcode == SpvOpTypeArray && length >= 4)
         {
             types.push_back({spirv[i + 1], opcode, spirv[i + 2], spirv[i + 3]});
         }
-        else if (opcode == SpvOpTypeRuntimeArray && length >= 3)
+        else if(opcode == SpvOpTypeRuntimeArray && length >= 3)
         {
             types.push_back({spirv[i + 1], opcode, spirv[i + 2], 0});
         }
-        else if (opcode == SpvOpConstant && length >= 4)
+        else if(opcode == SpvOpConstant && length >= 4)
         {
             constants.push_back({spirv[i + 2], spirv[i + 3]});
         }
@@ -4886,7 +5102,8 @@ inline void ShaderModule::reflect_spirv(const std::vector<std::uint32_t>& spirv)
         i += length;
     }
 
-    auto find_type = [&](std::uint32_t id) -> const TypeInfo* {
+    auto find_type = [&](std::uint32_t id) -> const TypeInfo*
+    {
         for(auto& t : types)
             if(t.id == id)
                 return &t;
@@ -4894,7 +5111,8 @@ inline void ShaderModule::reflect_spirv(const std::vector<std::uint32_t>& spirv)
         return nullptr;
     };
 
-    auto find_constant = [&](std::uint32_t id) -> std::uint32_t {
+    auto find_constant = [&](std::uint32_t id) -> std::uint32_t
+    {
         for(auto& c : constants)
             if(c.first == id)
                 return c.second;
@@ -4903,7 +5121,8 @@ inline void ShaderModule::reflect_spirv(const std::vector<std::uint32_t>& spirv)
     };
 
     // Resolve pointer types to their pointed-to type
-    auto resolve_pointer = [&](std::uint32_t type_id) -> const TypeInfo* {
+    auto resolve_pointer = [&](std::uint32_t type_id) -> const TypeInfo*
+    {
         auto* t = find_type(type_id);
 
         if(t && t->opcode == SpvOpTypePointer)
@@ -4912,7 +5131,8 @@ inline void ShaderModule::reflect_spirv(const std::vector<std::uint32_t>& spirv)
         return t;
     };
 
-    auto infer_descriptor_type = [&](std::uint32_t type_id, std::uint32_t storage_class) -> VkDescriptorType {
+    auto infer_descriptor_type = [&](std::uint32_t type_id, std::uint32_t storage_class) -> VkDescriptorType
+    {
         auto* pointed = resolve_pointer(type_id);
 
         if(!pointed)
@@ -4938,7 +5158,8 @@ inline void ShaderModule::reflect_spirv(const std::vector<std::uint32_t>& spirv)
     // Build descriptor set layouts and push constant ranges
     std::vector<DescriptorSetLayoutInfo> sets;
 
-    auto find_or_add_set = [&](std::uint32_t set_number) -> DescriptorSetLayoutInfo& {
+    auto find_or_add_set = [&](std::uint32_t set_number) -> DescriptorSetLayoutInfo&
+    {
         for(auto& s : sets)
             if(s.set == set_number)
                 return s;
@@ -4976,7 +5197,7 @@ inline void ShaderModule::reflect_spirv(const std::vector<std::uint32_t>& spirv)
         {
             VertexInputAttribute attr;
             attr.location = dec->location;
-            attr.binding  = 0;
+            attr.binding = 0;
             attr.format = VK_FORMAT_R32G32B32A32_SFLOAT; // TODO: need type walk
             attr.offset = 0;
 
@@ -5013,32 +5234,28 @@ inline void ShaderModule::reflect_spirv(const std::vector<std::uint32_t>& spirv)
 
     this->_set_layouts = std::move(sets);
 
-    __LOG_TRACE("ShaderModule: SPIR-V reflection successful (sets: " __FMT_U64 ")",
-                this->_set_layouts.size());
+    __LOG_TRACE("ShaderModule: SPIR-V reflection successful (sets: " __FMT_U64 ")", this->_set_layouts.size());
 }
 
 // =============================================================================
 //  PipelineLayoutBuilder implementation
 // =============================================================================
 
-inline PipelineLayoutBuilder& PipelineLayoutBuilder::add_set(std::uint32_t set,
-                                                             const DescriptorSetLayoutInfo& info)
+PROSERPINE_INLINE PipelineLayoutBuilder& PipelineLayoutBuilder::add_set(std::uint32_t set,
+                                                                        const DescriptorSetLayoutInfo& info)
 {
-    __LOG_TRACE("PipelineLayoutBuilder: Added a new set (" __FMT_U32 ")",
-                info.set);
+    __LOG_TRACE("PipelineLayoutBuilder: Added a new set (" __FMT_U32 ")", info.set);
 
     this->_sets.push_back({set, info});
 
     return *this;
 }
 
-inline PipelineLayoutBuilder& PipelineLayoutBuilder::add_push_constant_range(VkShaderStageFlags stages,
-                                                                             std::uint32_t offset,
-                                                                             std::uint32_t size)
+PROSERPINE_INLINE PipelineLayoutBuilder& PipelineLayoutBuilder::add_push_constant_range(VkShaderStageFlags stages,
+                                                                                        std::uint32_t offset,
+                                                                                        std::uint32_t size)
 {
-    __LOG_TRACE("PipelineLayoutBuilder: Added a push constant range (" __FMT_U32 ", " __FMT_U32 ")",
-                offset,
-                size);
+    __LOG_TRACE("PipelineLayoutBuilder: Added a push constant range (" __FMT_U32 ", " __FMT_U32 ")", offset, size);
 
     VkPushConstantRange range;
     range.stageFlags = stages;
@@ -5050,7 +5267,7 @@ inline PipelineLayoutBuilder& PipelineLayoutBuilder::add_push_constant_range(VkS
     return *this;
 }
 
-inline Expected<PipelineLayout> PipelineLayoutBuilder::build()
+PROSERPINE_INLINE Expected<PipelineLayout> PipelineLayoutBuilder::build()
 {
     __LOG_TRACE("PipelineLayoutBuilder: Building a new pipeline layout");
 
@@ -5102,7 +5319,8 @@ inline Expected<PipelineLayout> PipelineLayoutBuilder::build()
 
             if(result != VK_SUCCESS)
             {
-                __LOG_ERROR("PipelineLayoutBuilder: Failed to create a new pipeline layout (failed to create empty descriptor set layout)");
+                __LOG_ERROR("PipelineLayoutBuilder: Failed to create a new pipeline layout (failed "
+                            "to create empty descriptor set layout)");
                 return Error(result, "Failed to create empty descriptor set layout");
             }
 
@@ -5122,8 +5340,8 @@ inline Expected<PipelineLayout> PipelineLayoutBuilder::build()
             vk_b.stageFlags = b.stage_flags;
             vk_bindings.push_back(vk_b);
 
-            VkDescriptorBindingFlags flags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
-                                             VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+            VkDescriptorBindingFlags flags =
+                VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
 
             if(b.variable_count)
             {
@@ -5134,8 +5352,9 @@ inline Expected<PipelineLayout> PipelineLayoutBuilder::build()
             binding_flags.push_back(flags);
         }
 
-        VkDescriptorSetLayoutBindingFlagsCreateInfo flags_create_info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO};
-        flags_create_info.bindingCount  = static_cast<std::uint32_t>(binding_flags.size());
+        VkDescriptorSetLayoutBindingFlagsCreateInfo flags_create_info{
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO};
+        flags_create_info.bindingCount = static_cast<std::uint32_t>(binding_flags.size());
         flags_create_info.pBindingFlags = binding_flags.data();
 
         VkDescriptorSetLayoutCreateInfo sl_create_info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
@@ -5154,7 +5373,8 @@ inline Expected<PipelineLayout> PipelineLayoutBuilder::build()
                     vkDestroyDescriptorSetLayout(this->_device, pl._set_layouts[j], nullptr);
             }
 
-            __LOG_ERROR("PipelineLayoutBuilder: Failed to create a new pipeline layout (failed to create the descriptor set layout)");
+            __LOG_ERROR("PipelineLayoutBuilder: Failed to create a new pipeline layout (failed to "
+                        "create the descriptor set layout)");
 
             return Error(result, "Failed to create descriptor set layout");
         }
@@ -5172,7 +5392,7 @@ inline Expected<PipelineLayout> PipelineLayoutBuilder::build()
     if(result != VK_SUCCESS)
     {
         for(auto sl : pl._set_layouts)
-            if (sl != VK_NULL_HANDLE)
+            if(sl != VK_NULL_HANDLE)
                 vkDestroyDescriptorSetLayout(this->_device, sl, nullptr);
 
         __LOG_ERROR("PipelineLayoutBuilder: Failed to create a new pipeline layout");
@@ -5189,7 +5409,7 @@ inline Expected<PipelineLayout> PipelineLayoutBuilder::build()
 //  PipelineLayout destructor / move
 // =============================================================================
 
-inline PipelineLayout::~PipelineLayout()
+PROSERPINE_INLINE PipelineLayout::~PipelineLayout()
 {
     if(this->_device != VK_NULL_HANDLE)
     {
@@ -5204,13 +5424,13 @@ inline PipelineLayout::~PipelineLayout()
     }
 }
 
-inline PipelineLayout::PipelineLayout(PipelineLayout&& other) noexcept
+PROSERPINE_INLINE PipelineLayout::PipelineLayout(PipelineLayout&& other) noexcept
 {
     __MOVE_AND_NULL(_device, _layout);
     __MOVE(_set_layouts);
 }
 
-inline PipelineLayout& PipelineLayout::operator=(PipelineLayout&& other) noexcept
+PROSERPINE_INLINE PipelineLayout& PipelineLayout::operator=(PipelineLayout&& other) noexcept
 {
     if(this != &other)
     {
@@ -5235,16 +5455,16 @@ inline PipelineLayout& PipelineLayout::operator=(PipelineLayout&& other) noexcep
 //  ShaderStages helper
 // =============================================================================
 
-inline ShaderStages& ShaderStages::add(const ShaderModule& mod, const char* entry)
+PROSERPINE_INLINE ShaderStages& ShaderStages::add(const ShaderModule& mod, const char* entry)
 {
     __LOG_TRACE("ShaderStages: Adding a new entry: " __FMT_STR " (" __FMT_U64H ")",
                 entry,
                 reinterpret_cast<std::uint64_t>(mod.handle()));
 
     VkPipelineShaderStageCreateInfo create_info{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
-    create_info.stage  = mod.stage();
+    create_info.stage = mod.stage();
     create_info.module = mod.handle();
-    create_info.pName  = entry;
+    create_info.pName = entry;
 
     stages.push_back(create_info);
 
@@ -5255,11 +5475,11 @@ inline ShaderStages& ShaderStages::add(const ShaderModule& mod, const char* entr
 //  GraphicsPipeline creation
 // =============================================================================
 
-inline Expected<GraphicsPipeline> create_graphics_pipeline(VkDevice device,
-                                                           const GraphicsPipeline::CreateInfo& info,
-                                                           const ShaderStages& stages,
-                                                           const VertexInputState& vertex_input,
-                                                           VkPipelineLayout layout)
+PROSERPINE_INLINE Expected<GraphicsPipeline> create_graphics_pipeline(VkDevice device,
+                                                                      const GraphicsPipeline::CreateInfo& info,
+                                                                      const ShaderStages& stages,
+                                                                      const VertexInputState& vertex_input,
+                                                                      VkPipelineLayout layout)
 {
     __LOG_TRACE("GraphicsPipeline: Creating a new graphics pipeline");
 
@@ -5287,7 +5507,7 @@ inline Expected<GraphicsPipeline> create_graphics_pipeline(VkDevice device,
     // Viewport / scissor (dynamic)
     VkPipelineViewportStateCreateInfo viewport_state{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
     viewport_state.viewportCount = info.viewport_count;
-    viewport_state.scissorCount  = info.scissor_count;
+    viewport_state.scissorCount = info.scissor_count;
 
     __LOG_TRACE("GraphicsPipeline: " __FMT_U32 " viewport(s), " __FMT_U32 " scissor(s)",
                 info.viewport_count,
@@ -5355,7 +5575,7 @@ inline Expected<GraphicsPipeline> create_graphics_pipeline(VkDevice device,
     return gp;
 }
 
-inline GraphicsPipeline::~GraphicsPipeline()
+PROSERPINE_INLINE GraphicsPipeline::~GraphicsPipeline()
 {
     if(this->_pipeline != VK_NULL_HANDLE && this->_device != VK_NULL_HANDLE)
     {
@@ -5365,12 +5585,12 @@ inline GraphicsPipeline::~GraphicsPipeline()
     }
 }
 
-inline GraphicsPipeline::GraphicsPipeline(GraphicsPipeline&& other) noexcept
+PROSERPINE_INLINE GraphicsPipeline::GraphicsPipeline(GraphicsPipeline&& other) noexcept
 {
     __MOVE_AND_NULL(_device, _pipeline);
 }
 
-inline GraphicsPipeline& GraphicsPipeline::operator=(GraphicsPipeline&& other) noexcept
+PROSERPINE_INLINE GraphicsPipeline& GraphicsPipeline::operator=(GraphicsPipeline&& other) noexcept
 {
     if(this != &other)
     {
@@ -5387,10 +5607,10 @@ inline GraphicsPipeline& GraphicsPipeline::operator=(GraphicsPipeline&& other) n
 //  ComputePipeline creation
 // =============================================================================
 
-inline Expected<ComputePipeline> create_compute_pipeline(VkDevice device,
-                                                         const ShaderModule& shader,
-                                                         VkPipelineLayout layout,
-                                                         const char* entry)
+PROSERPINE_INLINE Expected<ComputePipeline> create_compute_pipeline(VkDevice device,
+                                                                    const ShaderModule& shader,
+                                                                    VkPipelineLayout layout,
+                                                                    const char* entry)
 {
     __LOG_TRACE("ComputePipeline: Creating a new compute pipeline");
 
@@ -5398,12 +5618,12 @@ inline Expected<ComputePipeline> create_compute_pipeline(VkDevice device,
     cp._device = device;
 
     VkPipelineShaderStageCreateInfo stage{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
-    stage.stage  = VK_SHADER_STAGE_COMPUTE_BIT;
+    stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
     stage.module = shader.handle();
-    stage.pName  = entry;
+    stage.pName = entry;
 
     VkComputePipelineCreateInfo ci{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
-    ci.stage  = stage;
+    ci.stage = stage;
     ci.layout = layout;
 
     VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &ci, nullptr, &cp._pipeline);
@@ -5421,7 +5641,7 @@ inline Expected<ComputePipeline> create_compute_pipeline(VkDevice device,
     return cp;
 }
 
-inline ComputePipeline::~ComputePipeline()
+PROSERPINE_INLINE ComputePipeline::~ComputePipeline()
 {
     if(this->_pipeline != VK_NULL_HANDLE && this->_device != VK_NULL_HANDLE)
     {
@@ -5431,14 +5651,15 @@ inline ComputePipeline::~ComputePipeline()
     }
 }
 
-inline ComputePipeline::ComputePipeline(ComputePipeline&& other) noexcept : _device(other._device),
-                                                                            _pipeline(other._pipeline)
+PROSERPINE_INLINE ComputePipeline::ComputePipeline(ComputePipeline&& other) noexcept
+    : _device(other._device),
+      _pipeline(other._pipeline)
 {
     other._device = VK_NULL_HANDLE;
     other._pipeline = VK_NULL_HANDLE;
 }
 
-inline ComputePipeline& ComputePipeline::operator=(ComputePipeline&& other) noexcept
+PROSERPINE_INLINE ComputePipeline& ComputePipeline::operator=(ComputePipeline&& other) noexcept
 {
     if(this != &other)
     {
@@ -5459,12 +5680,13 @@ inline ComputePipeline& ComputePipeline::operator=(ComputePipeline&& other) noex
 //  FencePool implementation
 // =============================================================================
 
-inline FencePool::FencePool(VkDevice device) : _device(device)
+PROSERPINE_INLINE FencePool::FencePool(VkDevice device)
+    : _device(device)
 {
     __LOG_DEBUG("FencePool: Initializing FencePool");
 }
 
-inline FencePool::~FencePool()
+PROSERPINE_INLINE FencePool::~FencePool()
 {
     __LOG_DEBUG("FencePool: Destroying FencePool");
 
@@ -5472,13 +5694,13 @@ inline FencePool::~FencePool()
         vkDestroyFence(this->_device, f, nullptr);
 }
 
-inline FencePool::FencePool(FencePool&& other) noexcept
+PROSERPINE_INLINE FencePool::FencePool(FencePool&& other) noexcept
 {
     __MOVE_AND_NULL(_device);
     __MOVE(_free, _all);
 }
 
-inline FencePool& FencePool::operator=(FencePool&& other) noexcept
+PROSERPINE_INLINE FencePool& FencePool::operator=(FencePool&& other) noexcept
 {
     if(this != &other)
     {
@@ -5489,10 +5711,9 @@ inline FencePool& FencePool::operator=(FencePool&& other) noexcept
     return *this;
 }
 
-inline VkFence FencePool::acquire(bool signaled)
+PROSERPINE_INLINE VkFence FencePool::acquire(bool signaled)
 {
-    __LOG_TRACE("FencePool: Acquiring a fence (signaled: " __FMT_BOOL ")",
-                static_cast<std::int32_t>(signaled));
+    __LOG_TRACE("FencePool: Acquiring a fence (signaled: " __FMT_BOOL ")", static_cast<std::int32_t>(signaled));
 
     if(!this->_free.empty())
     {
@@ -5516,16 +5737,14 @@ inline VkFence FencePool::acquire(bool signaled)
 
     this->_all.push_back(fence);
 
-    __LOG_TRACE("FencePool: Acquired a fence (" __FMT_U64H ")",
-                reinterpret_cast<std::uint64_t>(fence));
+    __LOG_TRACE("FencePool: Acquired a fence (" __FMT_U64H ")", reinterpret_cast<std::uint64_t>(fence));
 
     return fence;
 }
 
-inline void FencePool::release(VkFence fence)
+PROSERPINE_INLINE void FencePool::release(VkFence fence)
 {
-    __LOG_TRACE("FencePool: Releasing a fence (" __FMT_U64H ")",
-                reinterpret_cast<std::uint64_t>(fence));
+    __LOG_TRACE("FencePool: Releasing a fence (" __FMT_U64H ")", reinterpret_cast<std::uint64_t>(fence));
 
     this->_free.push_back(fence);
 }

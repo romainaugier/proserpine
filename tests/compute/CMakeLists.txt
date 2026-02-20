@@ -7,7 +7,7 @@ function(proserpine_add_compute_test SOURCE)
     get_filename_component(TEST_NAME ${SOURCE} NAME_WLE)
     message(STATUS "Adding compute test : ${TEST_NAME}")
     add_executable(${TEST_NAME} ${SOURCE})
-    target_link_libraries(${TEST_NAME} PRIVATE proserpine)
+    target_link_libraries(${TEST_NAME} PRIVATE proserpine_lib)
     target_include_directories(${TEST_NAME} PRIVATE ${TEST_UTILS_INCLUDE_DIR})
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 

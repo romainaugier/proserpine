@@ -1,6 +1,6 @@
 Language: Cpp
 IndentWidth: 4
-ColumnLimit: 100
+ColumnLimit: 120
 
 AlwaysBreakAfterReturnType: None
 AlwaysBreakAfterDefinitionReturnType: None
@@ -20,7 +20,7 @@ AlignAfterOpenBracket: Align
 
 PenaltyBreakBeforeFirstCallParameter: 1
 PenaltyBreakOpenParenthesis: 0
-PenaltyExcessCharacter: 10000
+PenaltyExcessCharacter: 100
 
 PenaltyReturnTypeOnItsOwnLine: 1000000
 

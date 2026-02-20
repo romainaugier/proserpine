@@ -5,6 +5,11 @@
 # Utils
 set(TEST_UTILS_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/utils)
 
+# Proserpine static lib
+add_library(proserpine_lib STATIC proserpine_lib.cpp)
+target_link_libraries(proserpine_lib PUBLIC proserpine)
+target_include_directories(proserpine_lib PRIVATE ${TEST_UTILS_INCLUDE_DIR})
+
 # GLSLC
 set(GLSLC ${Vulkan_GLSLC_EXECUTABLE})
 set(GLSLC_ARGS --target-env=vulkan1.4 -O)
