@@ -340,6 +340,7 @@ class CommandBuffer;
 class CommandProfiler;
 class ShaderModule;
 class PipelineLayout;
+class PipelineCache;
 class GraphicsPipeline;
 class ComputePipeline;
 
@@ -1497,6 +1498,29 @@ private:
 //  Pipeline wrappers
 // =============================================================================
 
+class PipelineCache
+{
+    friend Expected<PipelineCache> create_pipeline_cache(VkDevice, const std::vector<std::byte>&);
+
+public:
+    PipelineCache() = default;
+    ~PipelineCache();
+
+    PROSERPINE_NON_COPYABLE_MOVABLE(PipelineCache);
+
+    inline VkPipelineCache handle() const { return this->_cache; }
+    inline operator VkPipelineCache() const { return this->_cache; }
+
+    // Retrieve the cache blob
+    Expected<std::vector<std::byte>> serialize() const;
+
+private:
+    VkDevice _device = VK_NULL_HANDLE;
+    VkPipelineCache _cache = VK_NULL_HANDLE;
+};
+
+Expected<PipelineCache> create_pipeline_cache(VkDevice device, const std::vector<std::byte>& data = {});
+
 struct ShaderStages
 {
     std::vector<VkPipelineShaderStageCreateInfo> stages;
@@ -1577,7 +1601,8 @@ private:
                                                                const GraphicsPipeline::CreateInfo&,
                                                                const ShaderStages&,
                                                                const VertexInputState&,
-                                                               VkPipelineLayout);
+                                                               VkPipelineLayout,
+                                                               VkPipelineCache);
 };
 
 class ComputePipeline
@@ -1604,19 +1629,22 @@ private:
     friend Expected<ComputePipeline> create_compute_pipeline(VkDevice device,
                                                              const ShaderModule& shader,
                                                              VkPipelineLayout layout,
-                                                             const char* entry);
+                                                             const char* entry,
+                                                             VkPipelineCache);
 };
 
 Expected<GraphicsPipeline> create_graphics_pipeline(VkDevice device,
                                                     const GraphicsPipeline::CreateInfo& info,
                                                     const ShaderStages& stages,
                                                     const VertexInputState& vertex_input,
-                                                    VkPipelineLayout layout);
+                                                    VkPipelineLayout layout,
+                                                    VkPipelineCache cache = VK_NULL_HANDLE);
 
 Expected<ComputePipeline> create_compute_pipeline(VkDevice device,
                                                   const ShaderModule& shader,
                                                   VkPipelineLayout layout,
-                                                  const char* entry = "main");
+                                                  const char* entry = "main",
+                                                  VkPipelineCache cache = VK_NULL_HANDLE);
 
 // =============================================================================
 //  Fence / Semaphore Pool
@@ -5472,6 +5500,66 @@ PROSERPINE_INLINE ShaderStages& ShaderStages::add(const ShaderModule& mod, const
 }
 
 // =============================================================================
+//  PipelineCache implementation
+// =============================================================================
+
+PROSERPINE_INLINE PipelineCache::~PipelineCache()
+{
+    if(this->_cache != VK_NULL_HANDLE)
+    {
+        __LOG_TRACE("PipelineCache: Destroying");
+        vkDestroyPipelineCache(this->_device, this->_cache, nullptr);
+    }
+}
+
+PROSERPINE_INLINE PipelineCache::PipelineCache(PipelineCache&& other) noexcept
+{
+    __MOVE_AND_NULL(_device, _cache);
+}
+
+PROSERPINE_INLINE PipelineCache& PipelineCache::operator=(PipelineCache&& other) noexcept
+{
+    if(this != &other)
+    {
+        __MOVE_AND_NULL(_device, _cache);
+    }
+
+    return *this;
+}
+
+PROSERPINE_INLINE Expected<std::vector<std::byte>> PipelineCache::serialize() const
+{
+    std::size_t size = 0;
+
+    if (const VkResult r = vkGetPipelineCacheData(this->_device, this->_cache, &size, nullptr); r != VK_SUCCESS)
+        return Error("Error while getting pipeline cache data");
+
+    std::vector<std::byte> blob(size);
+
+    if (const VkResult r = vkGetPipelineCacheData(this->_device, this->_cache, &size, blob.data()); r != VK_SUCCESS)
+        return Error("Error while getting pipeline cache data");
+
+    return blob;
+}
+
+PROSERPINE_INLINE Expected<PipelineCache> create_pipeline_cache(VkDevice device, const std::vector<std::byte>& data)
+{
+    PipelineCache out;
+    out._device = device;
+
+    const VkPipelineCacheCreateInfo info {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
+        .initialDataSize = data.size(),
+        .pInitialData = data.empty() ? nullptr : data.data(),
+    };
+
+    if(const VkResult r = vkCreatePipelineCache(device, &info, nullptr, &out._cache); r != VK_SUCCESS)
+        return Error("Error while creating pipeline cache");
+
+    return out;
+}
+
+// =============================================================================
 //  GraphicsPipeline creation
 // =============================================================================
 
@@ -5479,7 +5567,8 @@ PROSERPINE_INLINE Expected<GraphicsPipeline> create_graphics_pipeline(VkDevice d
                                                                       const GraphicsPipeline::CreateInfo& info,
                                                                       const ShaderStages& stages,
                                                                       const VertexInputState& vertex_input,
-                                                                      VkPipelineLayout layout)
+                                                                      VkPipelineLayout layout,
+                                                                      VkPipelineCache cache)
 {
     __LOG_TRACE("GraphicsPipeline: Creating a new graphics pipeline");
 
@@ -5560,7 +5649,7 @@ PROSERPINE_INLINE Expected<GraphicsPipeline> create_graphics_pipeline(VkDevice d
     create_info.layout = layout;
     create_info.renderPass = VK_NULL_HANDLE; // we use dynamic rendering
 
-    VkResult result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &create_info, nullptr, &gp._pipeline);
+    VkResult result = vkCreateGraphicsPipelines(device, cache, 1, &create_info, nullptr, &gp._pipeline);
 
     if(result != VK_SUCCESS)
     {
@@ -5610,7 +5699,8 @@ PROSERPINE_INLINE GraphicsPipeline& GraphicsPipeline::operator=(GraphicsPipeline
 PROSERPINE_INLINE Expected<ComputePipeline> create_compute_pipeline(VkDevice device,
                                                                     const ShaderModule& shader,
                                                                     VkPipelineLayout layout,
-                                                                    const char* entry)
+                                                                    const char* entry,
+                                                                    VkPipelineCache cache)
 {
     __LOG_TRACE("ComputePipeline: Creating a new compute pipeline");
 
@@ -5626,7 +5716,7 @@ PROSERPINE_INLINE Expected<ComputePipeline> create_compute_pipeline(VkDevice dev
     ci.stage = stage;
     ci.layout = layout;
 
-    VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &ci, nullptr, &cp._pipeline);
+    VkResult result = vkCreateComputePipelines(device, cache, 1, &ci, nullptr, &cp._pipeline);
 
     if(result != VK_SUCCESS)
     {
